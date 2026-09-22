@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowLeft,
@@ -10,9 +10,14 @@ import {
 import { useSftpStore } from "../../stores/useSftpStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { FilePane } from "./FilePane";
+import { FileEditorModal } from "./FileEditorModal";
+import { FileEntry } from "../../lib/api";
 
 export function SftpView() {
   const { hosts } = useHostStore();
+  const [editingFile, setEditingFile] = useState<{ file: FileEntry; isRemote: boolean } | null>(
+    null
+  );
   const {
     remoteHost,
     remoteSessionId,
@@ -117,6 +122,7 @@ export function SftpView() {
           onCreateFolder={createLocalFolder}
           onDeleteItem={deleteLocalItem}
           onRefresh={() => navigateLocal(localPath)}
+          onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: false })}
         />
 
         {/* Center Transfer Buttons */}
@@ -175,9 +181,27 @@ export function SftpView() {
           onCreateFolder={createRemoteFolder}
           onDeleteItem={deleteRemoteItem}
           onRefresh={() => navigateRemote(remotePath)}
+          onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: true })}
           disabled={!remoteSessionId}
         />
       </div>
+
+      {/* In-App SFTP File Editor Modal */}
+      {editingFile && (
+        <FileEditorModal
+          file={editingFile.file}
+          isRemote={editingFile.isRemote}
+          sessionId={remoteSessionId}
+          onClose={() => setEditingFile(null)}
+          onSaved={() => {
+            if (editingFile.isRemote) {
+              navigateRemote(remotePath);
+            } else {
+              navigateLocal(localPath);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

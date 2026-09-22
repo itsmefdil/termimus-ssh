@@ -134,6 +134,10 @@ export const api = {
     invoke<void>("sftp_download", { sessionId, remotePath, localPath }),
   disconnectSftp: (sessionId: string) =>
     invoke<void>("sftp_disconnect", { sessionId }),
+  readSftpFile: (sessionId: string, path: string) =>
+    invoke<string>("sftp_read_file", { sessionId, path }),
+  writeSftpFile: (sessionId: string, path: string, content: string) =>
+    invoke<void>("sftp_write_file", { sessionId, path, content }),
 
   // Local Filesystem
   getLocalHomeDir: () => invoke<string>("local_home_dir"),
@@ -141,6 +145,10 @@ export const api = {
   mkdirLocal: (path: string) => invoke<void>("local_mkdir", { path }),
   deleteLocal: (path: string, isDir: boolean) =>
     invoke<void>("local_delete", { path, isDir }),
+  readLocalFile: (path: string) =>
+    invoke<string>("local_read_file", { path }),
+  writeLocalFile: (path: string, content: string) =>
+    invoke<void>("local_write_file", { path, content }),
 
   // Port Forwarding / Tunnels
   listTunnelRules: () => invoke<PortForwardRule[]>("tunnel_rule_list"),

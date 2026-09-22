@@ -296,6 +296,78 @@ impl SftpManager {
         Ok(())
     }
 
+    pub async fn read_text_file(
+        &self,
+        session_id: &str,
+        remote_path: &str,
+    ) -> Result<String, String> {
+        let connections = self.connections.lock().await;
+        let conn = connections
+            .get(session_id)
+            .ok_or_else(|| "SFTP session not found".to_string())?;
+
+        let metadata = conn
+            .sftp
+            .metadata(remote_path)
+            .await
+            .map_err(|e| format!("Cannot read file metadata: {e}"))?;
+
+        if let Some(size) = metadata.size {
+            if size > 5 * 1024 * 1024 {
+                return Err("File is too large to open in the inline editor (max 5 MB)".to_string());
+            }
+        }
+
+        let mut file = conn
+            .sftp
+            .open_with_flags(remote_path, OpenFlags::READ)
+            .await
+            .map_err(|e| format!("Failed to open remote file: {e}"))?;
+
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .await
+            .map_err(|e| format!("Failed to read remote file: {e}"))?;
+
+        String::from_utf8(buffer)
+            .map_err(|_| "File contains binary data and cannot be displayed as plain text".to_string())
+    }
+
+    pub async fn write_text_file(
+        &self,
+        session_id: &str,
+        remote_path: &str,
+        content: &str,
+    ) -> Result<(), String> {
+        let connections = self.connections.lock().await;
+        let conn = connections
+            .get(session_id)
+            .ok_or_else(|| "SFTP session not found".to_string())?;
+
+        let mut file = conn
+            .sftp
+            .open_with_flags(
+                remote_path,
+                OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
+            )
+            .await
+            .map_err(|e| format!("Failed to open remote file for writing: {e}"))?;
+
+        file.write_all(content.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write to remote file: {e}"))?;
+
+        file.flush()
+            .await
+            .map_err(|e| format!("Failed to flush remote file: {e}"))?;
+
+        file.shutdown()
+            .await
+            .map_err(|e| format!("Failed to finalize remote file: {e}"))?;
+
+        Ok(())
+    }
+
     pub async fn disconnect(&self, session_id: &str) -> Result<(), String> {
         let mut connections = self.connections.lock().await;
         connections.remove(session_id);
@@ -348,4 +420,16 @@ pub fn get_user_home() -> String {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "/".to_string())
+}
+
+pub fn read_local_text_file(path: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(path).map_err(|e| format!("Cannot read file metadata: {e}"))?;
+    if metadata.len() > 5 * 1024 * 1024 {
+        return Err("File is too large to open in the inline editor (max 5 MB)".to_string());
+    }
+    fs::read_to_string(path).map_err(|e| format!("Cannot read local file: {e}"))
+}
+
+pub fn write_local_text_file(path: &Path, content: &str) -> Result<(), String> {
+    fs::write(path, content).map_err(|e| format!("Cannot write to local file: {e}"))
 }

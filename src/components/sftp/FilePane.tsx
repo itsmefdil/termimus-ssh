@@ -7,6 +7,7 @@ import {
   FolderPlus,
   Trash2,
   Loader2,
+  FileCode,
 } from "lucide-react";
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
@@ -23,6 +24,7 @@ interface FilePaneProps {
   onCreateFolder: (name: string) => Promise<void>;
   onDeleteItem: (entry: FileEntry) => Promise<void>;
   onRefresh: () => void;
+  onOpenFile?: (entry: FileEntry) => void;
   disabled?: boolean;
 }
 
@@ -38,6 +40,7 @@ export function FilePane({
   onCreateFolder,
   onDeleteItem,
   onRefresh,
+  onOpenFile,
   disabled = false,
 }: FilePaneProps) {
   const [newFolderName, setNewFolderName] = useState("");
@@ -170,9 +173,11 @@ export function FilePane({
                     onDoubleClick={() => {
                       if (entry.is_dir) {
                         onNavigate(entry.path);
+                      } else {
+                        onOpenFile?.(entry);
                       }
                     }}
-                    className={`cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
+                    className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
                       isSelected
                         ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"
                         : "hover:bg-[var(--card)] text-[var(--text-primary)]"
@@ -199,13 +204,27 @@ export function FilePane({
                       {formatDate(entry.modified)}
                     </td>
                     <td className="py-1.5 pr-2 text-right">
-                      <button
-                        onClick={(e) => handleDeleteClick(e, entry)}
-                        title="Delete"
-                        className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] group-hover:opacity-100 hover:opacity-100"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        {!entry.is_dir && onOpenFile && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenFile(entry);
+                            }}
+                            title="Edit file"
+                            className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--primary)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                          >
+                            <FileCode size={13} />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => handleDeleteClick(e, entry)}
+                          title="Delete"
+                          className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

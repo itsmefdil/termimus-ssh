@@ -387,6 +387,25 @@ pub async fn sftp_disconnect(
     state.sftp.disconnect(&session_id).await
 }
 
+#[tauri::command]
+pub async fn sftp_read_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<String, String> {
+    state.sftp.read_text_file(&session_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_write_file(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    state.sftp.write_text_file(&session_id, &path, &content).await
+}
+
 // Local filesystem helpers
 #[tauri::command]
 pub fn local_home_dir() -> String {
@@ -400,6 +419,16 @@ pub fn local_list(path: Option<String>) -> Result<Vec<FileEntry>, String> {
         _ => Path::new(&sftp::get_user_home()).to_path_buf(),
     };
     sftp::list_local_directory(&p)
+}
+
+#[tauri::command]
+pub fn local_read_file(path: String) -> Result<String, String> {
+    sftp::read_local_text_file(Path::new(&path))
+}
+
+#[tauri::command]
+pub fn local_write_file(path: String, content: String) -> Result<(), String> {
+    sftp::write_local_text_file(Path::new(&path), &content)
 }
 
 #[tauri::command]
