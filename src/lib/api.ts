@@ -99,6 +99,16 @@ export interface KnownHost {
   last_seen_at: string;
 }
 
+export interface ImportSummary {
+  folders: number;
+  credentials: number;
+  hosts: number;
+  port_forwards: number;
+  snippets: number;
+  known_hosts: number;
+  vault_meta_restored: boolean;
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -189,4 +199,9 @@ export const api = {
   listKnownHosts: () => invoke<KnownHost[]>("known_host_list"),
   deleteKnownHost: (address: string, port: number) =>
     invoke<void>("known_host_delete", { address, port }),
+
+  // Backup & Restore
+  exportBackup: () => invoke<string>("backup_export"),
+  importBackup: (backupJson: string, replaceAll: boolean) =>
+    invoke<ImportSummary>("backup_import", { backupJson, replaceAll }),
 };

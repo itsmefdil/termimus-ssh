@@ -70,6 +70,8 @@ pub fn run() {
             commands::ping_hosts,
             commands::known_host_list,
             commands::known_host_delete,
+            commands::backup_export,
+            commands::backup_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");

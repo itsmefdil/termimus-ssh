@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost};
+use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, ImportSummary};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -650,4 +650,29 @@ pub fn known_host_delete(
     port: u16,
 ) -> Result<(), String> {
     state.db.delete_known_host(&address, port).map_err(|e| e.to_string())
+}
+
+// ================= BACKUP & RESTORE COMMANDS =================
+
+#[tauri::command]
+pub fn backup_export(state: State<AppState>) -> Result<String, String> {
+    let bundle = state.db.export_backup_bundle("0.1.0").map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&bundle)
+        .map_err(|e| format!("Failed to serialize backup bundle: {e}"))
+}
+
+#[tauri::command]
+pub fn backup_import(
+    state: State<AppState>,
+    backup_json: String,
+    replace_all: bool,
+) -> Result<ImportSummary, String> {
+    let bundle: BackupBundle = serde_json::from_str(&backup_json)
+        .map_err(|e| format!("Invalid backup file format: {e}"))?;
+
+    if bundle.format_version != 1 {
+        return Err(format!("Unsupported backup format version: {}", bundle.format_version));
+    }
+
+    state.db.import_backup_bundle(&bundle, replace_all).map_err(|e| e.to_string())
 }

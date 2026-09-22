@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
+import { BackupRestoreSection } from "./BackupRestoreSection";
 
 export function VaultOverview() {
   const { lock: lockVault } = useVaultStore();
@@ -153,6 +154,9 @@ export function VaultOverview() {
             </span>
           </div>
         </div>
+
+        {/* Encrypted Backup & Restore Section */}
+        <BackupRestoreSection />
       </div>
     </div>
   );

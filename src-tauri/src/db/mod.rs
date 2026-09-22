@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, PortForwardRule, Snippet, KnownHost};
+use models::{Folder, Host, Credential, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -241,6 +241,24 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn list_credentials(&self) -> Result<Vec<Credential>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce FROM credentials"
+        )?;
+        let list = stmt.query_map([], |row| {
+            Ok(Credential {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                ciphertext: row.get(2)?,
+                nonce: row.get(3)?,
+                passphrase_ciphertext: row.get(4)?,
+                passphrase_nonce: row.get(5)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(list)
     }
 
     pub fn list_folders(&self) -> Result<Vec<Folder>> {
@@ -495,6 +513,93 @@ impl Database {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    /// Build a full snapshot of every table for export. Credential fields stay
+    /// as their AES-256-GCM ciphertext/nonce — nothing here is plaintext.
+    pub fn export_backup_bundle(&self, app_version: &str) -> Result<BackupBundle> {
+        let vault_salt = self.get_vault_meta("salt")?;
+        let vault_verifier_ciphertext = self.get_vault_meta("verifier_ciphertext")?;
+        let vault_verifier_nonce = self.get_vault_meta("verifier_nonce")?;
+
+        Ok(BackupBundle {
+            format_version: 1,
+            app_version: app_version.to_string(),
+            exported_at: chrono::Utc::now().to_rfc3339(),
+            vault_salt,
+            vault_verifier_ciphertext,
+            vault_verifier_nonce,
+            folders: self.list_folders()?,
+            credentials: self.list_credentials()?,
+            hosts: self.list_hosts()?,
+            port_forwards: self.list_port_forwards()?,
+            snippets: self.list_snippets()?,
+            known_hosts: self.list_known_hosts()?,
+        })
+    }
+
+    /// Restore a backup bundle. When `replace_all` is true, every table this
+    /// bundle covers is wiped first so the import produces an exact copy;
+    /// otherwise rows are merged/upserted by their existing primary keys.
+    pub fn import_backup_bundle(&self, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary> {
+        {
+            let conn = self.conn.lock().unwrap();
+            if replace_all {
+                conn.execute_batch(
+                    "DELETE FROM known_hosts;
+                     DELETE FROM snippets;
+                     DELETE FROM port_forwards;
+                     DELETE FROM hosts;
+                     DELETE FROM credentials;
+                     DELETE FROM folders;",
+                )?;
+            }
+        }
+
+        let mut vault_meta_restored = false;
+        if let (Some(salt), Some(ct), Some(nonce)) = (
+            &bundle.vault_salt,
+            &bundle.vault_verifier_ciphertext,
+            &bundle.vault_verifier_nonce,
+        ) {
+            // Only restore vault metadata if this vault has not been initialized yet,
+            // to avoid silently swapping the master password salt/verifier under the user.
+            if self.get_vault_meta("salt")?.is_none() {
+                self.set_vault_meta("salt", salt)?;
+                self.set_vault_meta("verifier_ciphertext", ct)?;
+                self.set_vault_meta("verifier_nonce", nonce)?;
+                vault_meta_restored = true;
+            }
+        }
+
+        for folder in &bundle.folders {
+            self.save_folder(folder)?;
+        }
+        for cred in &bundle.credentials {
+            self.save_credential(cred)?;
+        }
+        for host in &bundle.hosts {
+            self.save_host(host)?;
+        }
+        for rule in &bundle.port_forwards {
+            self.save_port_forward(rule)?;
+        }
+        for snippet in &bundle.snippets {
+            self.save_snippet(snippet)?;
+        }
+        for kh in &bundle.known_hosts {
+            self.save_known_host(kh)?;
+        }
+
+        Ok(ImportSummary {
+            folders: bundle.folders.len(),
+            credentials: bundle.credentials.len(),
+            hosts: bundle.hosts.len(),
+            port_forwards: bundle.port_forwards.len(),
+            snippets: bundle.snippets.len(),
+            known_hosts: bundle.known_hosts.len(),
+            vault_meta_restored,
+        })
     }
 }
 

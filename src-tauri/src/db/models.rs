@@ -151,3 +151,34 @@ pub struct KnownHost {
     pub first_seen_at: String,
     pub last_seen_at: String,
 }
+
+/// A full-fidelity snapshot of the encrypted database, used for backup/restore.
+/// Credentials remain as their AES-256-GCM ciphertext/nonce — the file carries
+/// no plaintext secrets by itself; the receiving vault still needs the same
+/// master password to decrypt them after import.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackupBundle {
+    pub format_version: u32,
+    pub app_version: String,
+    pub exported_at: String,
+    pub vault_salt: Option<Vec<u8>>,
+    pub vault_verifier_ciphertext: Option<Vec<u8>>,
+    pub vault_verifier_nonce: Option<Vec<u8>>,
+    pub folders: Vec<Folder>,
+    pub credentials: Vec<Credential>,
+    pub hosts: Vec<Host>,
+    pub port_forwards: Vec<PortForwardRule>,
+    pub snippets: Vec<Snippet>,
+    pub known_hosts: Vec<KnownHost>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportSummary {
+    pub folders: usize,
+    pub credentials: usize,
+    pub hosts: usize,
+    pub port_forwards: usize,
+    pub snippets: usize,
+    pub known_hosts: usize,
+    pub vault_meta_restored: bool,
+}
