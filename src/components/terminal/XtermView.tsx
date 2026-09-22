@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -16,12 +15,14 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const lastSizeRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
   const setConnected = useSessionStore((s) => s.setSessionConnected);
   const setError = useSessionStore((s) => s.setSessionError);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Use pure standard DOM / Canvas renderer (100% stable, no WebGL context loss or flickering on WebKitGTK)
     const term = new Terminal({
       cursorBlink: true,
       cursorStyle: "bar",
@@ -29,6 +30,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       fontSize: 13.5,
       lineHeight: 1.35,
       letterSpacing: 0,
+      scrollback: 5000,
       theme: {
         background: "#0a0e14",
         foreground: "#f0f6fc",
@@ -58,15 +60,22 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
+    term.open(containerRef.current);
+
+    // Initial fit if container has dimensions, or fallback to standard 80x24
+    let initialCols = 80;
+    let initialRows = 24;
     try {
-      term.loadAddon(new WebglAddon());
+      if (containerRef.current.clientWidth >= 100 && containerRef.current.clientHeight >= 100) {
+        fitAddon.fit();
+        initialCols = Math.max(term.cols, 20);
+        initialRows = Math.max(term.rows, 5);
+      }
     } catch {
-      // WebGL not supported in this environment — xterm falls back to canvas rendering.
+      // fallback
     }
 
-    term.open(containerRef.current);
-    fitAddon.fit();
-
+    lastSizeRef.current = { cols: initialCols, rows: initialRows };
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
@@ -88,19 +97,46 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       }),
     ];
 
-    // Kick off the actual SSH connection
-    const { cols, rows } = term;
+    // Kick off the actual SSH connection with verified initial geometry
     api
-      .connectSsh(hostId, sessionId, cols, rows)
+      .connectSsh(hostId, sessionId, initialCols, initialRows)
       .then(() => setConnected(sessionId, true))
       .catch((e) => {
         setError(sessionId, String(e));
         term.write(`\r\n\x1b[31mFailed to connect: ${String(e)}\x1b[0m\r\n`);
       });
 
+    // Resizing logic with strict dimension guarding
+    const handleResize = () => {
+      if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+
+      // CRITICAL: If container is hidden or collapsed, DO NOT fit and DO NOT send resize!
+      // Sending near-zero dimensions breaks curses/htop layout on the remote PTY.
+      if (width < 100 || height < 100) return;
+
+      try {
+        fitAddonRef.current.fit();
+        const cols = termRef.current.cols;
+        const rows = termRef.current.rows;
+
+        if (cols >= 20 && rows >= 5) {
+          if (
+            lastSizeRef.current.cols !== cols ||
+            lastSizeRef.current.rows !== rows
+          ) {
+            lastSizeRef.current = { cols, rows };
+            api.resizeSsh(sessionId, cols, rows).catch(() => {});
+          }
+        }
+      } catch {
+        // ignore fit during layout animation
+      }
+    };
+
     const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit();
-      api.resizeSsh(sessionId, term.cols, term.rows).catch(() => {});
+      handleResize();
     });
     resizeObserver.observe(containerRef.current);
 
@@ -113,18 +149,49 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // When tab becomes visible again after switching from another tab or view
   useEffect(() => {
-    if (visible && fitAddonRef.current && termRef.current) {
-      fitAddonRef.current.fit();
-      termRef.current.focus();
-    }
-  }, [visible]);
+    if (!visible || !termRef.current || !fitAddonRef.current || !containerRef.current) return;
+
+    const timer = setTimeout(() => {
+      if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+      if (width < 100 || height < 100) return;
+
+      try {
+        fitAddonRef.current.fit();
+        const cols = termRef.current.cols;
+        const rows = termRef.current.rows;
+        if (cols >= 20 && rows >= 5) {
+          if (
+            lastSizeRef.current.cols !== cols ||
+            lastSizeRef.current.rows !== rows
+          ) {
+            lastSizeRef.current = { cols, rows };
+            api.resizeSsh(sessionId, cols, rows).catch(() => {});
+          }
+        }
+        // Force full repaint of current screen buffer (cleans up any glitch from htop)
+        termRef.current.refresh(0, termRef.current.rows - 1);
+        termRef.current.focus();
+      } catch {
+        // ignore
+      }
+    }, 40);
+
+    return () => clearTimeout(timer);
+  }, [visible, sessionId]);
 
   return (
     <div
       ref={containerRef}
-      className="h-full w-full p-2"
-      style={{ display: visible ? "block" : "none" }}
+      className="absolute inset-0 p-2"
+      style={{
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
+        zIndex: visible ? 10 : 0,
+      }}
     />
   );
 }

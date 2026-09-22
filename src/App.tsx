@@ -56,12 +56,15 @@ function App() {
 
         {/* Viewport Switching */}
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
-          {/* Terminal sessions stay mounted at all times so switching tabs/views never
-              tears down or reconnects the underlying SSH session. Visibility is toggled
-              purely with CSS, same technique XtermView already uses per-tab. */}
+          {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
+              preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
           <div
             className="absolute inset-0"
-            style={{ display: showTerminal ? "block" : "none" }}
+            style={{
+              visibility: showTerminal ? "visible" : "hidden",
+              pointerEvents: showTerminal ? "auto" : "none",
+              zIndex: showTerminal ? 10 : 0,
+            }}
           >
             {tabs.length === 0 ? (
               <div className="flex h-full items-center justify-center text-center text-[var(--text-muted)]">

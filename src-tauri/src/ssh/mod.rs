@@ -141,7 +141,10 @@ impl SessionManager {
                                 let _ = channel.data(&data[..]).await;
                             }
                             Some(SessionCommand::Resize { cols, rows }) => {
-                                let _ = channel.window_change(cols, rows, 0, 0).await;
+                                // Safeguard: Ignore 0 or near-zero window sizes caused by hidden DOM elements
+                                if cols >= 15 && rows >= 4 {
+                                    let _ = channel.window_change(cols, rows, 0, 0).await;
+                                }
                             }
                             None => break,
                         }
