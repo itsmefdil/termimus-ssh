@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import {
   Server,
   Terminal,
@@ -7,7 +6,6 @@ import {
   Waypoints,
   KeyRound,
   Settings,
-  Plus,
   CloudCheck,
   Lock,
   PanelLeftClose,
@@ -24,30 +22,16 @@ export type ActiveTab = "hosts" | "terminal" | "sftp" | "tunnels" | "vault" | "s
 interface SidebarProps {
   activeNav: ActiveTab;
   onNavChange: (tab: ActiveTab) => void;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
-export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
+export function Sidebar({ activeNav, onNavChange, isCollapsed, onToggleCollapsed }: SidebarProps) {
   const { isUnlocked, lock: lockVault } = useVaultStore();
-  const { hosts, openCreateModal: openHostModal } = useHostStore();
+  const { hosts } = useHostStore();
   const { tabs } = useSessionStore();
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
-
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("termimus_sidebar_collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("termimus_sidebar_collapsed", String(isCollapsed));
-    } catch {
-      // ignore
-    }
-  }, [isCollapsed]);
 
   const navItems: {
     icon: typeof Server;
@@ -67,67 +51,13 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   return (
     <aside
       className={`flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--canvas)] transition-all duration-200 select-none ${
-        isCollapsed ? "w-[68px] items-center" : "w-60"
+        isCollapsed ? "w-[64px] items-center" : "w-56"
       }`}
     >
-      {/* Brand Header: Logo stays large & prominent without any clashing toggle button */}
-      <div
-        className={`flex h-14 w-full items-center border-b border-[var(--border)] ${
-          isCollapsed ? "justify-center px-2" : "justify-between px-3.5"
-        }`}
-      >
-        <div className="flex items-center gap-2.5 overflow-hidden">
-          <img
-            src="/logo.png"
-            alt="Termimus"
-            title="Termimus"
-            className="h-8 w-8 rounded-lg object-contain shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-            onClick={() => isCollapsed && setIsCollapsed(false)}
-          />
-          {!isCollapsed && (
-            <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)] truncate">
-              Termimus
-            </span>
-          )}
-        </div>
-
-        {/* In expanded mode, show collapse button on right */}
-        {!isCollapsed && (
-          <button
-            onClick={() => setIsCollapsed(true)}
-            title="Collapse sidebar"
-            className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors shrink-0"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        )}
-      </div>
-
-      {/* New Connection Button */}
-      <div className={`w-full py-3 ${isCollapsed ? "flex justify-center px-2" : "px-3"}`}>
-        {isCollapsed ? (
-          <button
-            onClick={openHostModal}
-            title="New Connection"
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--on-primary)] transition-all hover:bg-[var(--primary-hover)] shadow-sm hover:scale-105 active:scale-95"
-          >
-            <Plus size={20} strokeWidth={2.5} />
-          </button>
-        ) : (
-          <button
-            onClick={openHostModal}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--primary)] py-2 text-[13px] font-semibold text-[var(--on-primary)] transition-colors hover:bg-[var(--primary-hover)] shadow-sm"
-          >
-            <Plus size={16} strokeWidth={2.5} />
-            <span>New Connection</span>
-          </button>
-        )}
-      </div>
-
-      {/* Navigation Items with comfortable vertical spacing */}
+      {/* Navigation Items */}
       <nav
         className={`flex flex-1 flex-col w-full overflow-y-auto ${
-          isCollapsed ? "items-center gap-3 px-2 py-1" : "gap-1 px-2.5 py-1"
+          isCollapsed ? "items-center gap-2.5 px-2 pt-3 pb-1" : "gap-1 px-2.5 pt-3 pb-1"
         }`}
       >
         {navItems.map(({ icon: Icon, label, id, badge, badgeDot }, idx) => {
@@ -165,7 +95,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
             >
               <span className="flex items-center gap-2.5 truncate">
                 <Icon
-                  size={17}
+                  size={16}
                   className={
                     active
                       ? "text-[var(--primary)] shrink-0"
@@ -206,9 +136,8 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
               >
                 <Settings size={20} />
               </button>
-              {/* Relocated Minimize/Expand Button to Bottom */}
               <button
-                onClick={() => setIsCollapsed(false)}
+                onClick={onToggleCollapsed}
                 title="Expand sidebar"
                 className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--primary)] transition-colors"
               >
@@ -216,13 +145,25 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
               </button>
             </>
           ) : (
-            <button className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]">
-              <Settings
-                size={17}
-                className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
-              />
-              <span className="text-[13px] truncate">Settings & Sync</span>
-            </button>
+            <>
+              <button className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]">
+                <Settings
+                  size={16}
+                  className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
+                />
+                <span className="text-[13px] truncate">Settings & Sync</span>
+              </button>
+              <button
+                onClick={onToggleCollapsed}
+                className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+              >
+                <PanelLeftClose
+                  size={16}
+                  className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
+                />
+                <span className="text-[13px] truncate">Collapse Sidebar</span>
+              </button>
+            </>
           )}
         </div>
       </nav>
@@ -230,7 +171,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
       {/* Footer: Vault Status */}
       <div
         className={`border-t border-[var(--border)] bg-[var(--surface-low)] w-full ${
-          isCollapsed ? "flex flex-col items-center py-3 gap-2 px-2" : "p-2.5 flex flex-col gap-1.5"
+          isCollapsed ? "flex flex-col items-center py-2.5 gap-2 px-2" : "p-2.5 flex flex-col gap-1.5"
         }`}
       >
         {isCollapsed ? (

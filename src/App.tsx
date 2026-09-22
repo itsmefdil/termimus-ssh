@@ -15,6 +15,14 @@ import { VaultOverview } from "./components/vault/VaultOverview";
 
 function App() {
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("termimus_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
   const { isUnlocked, refresh: refreshVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
   const { tabs, activeTabId } = useSessionStore();
@@ -29,6 +37,14 @@ function App() {
     }
   }, [isUnlocked, refreshHosts]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("termimus_sidebar_collapsed", String(isSidebarCollapsed));
+    } catch {
+      // ignore
+    }
+  }, [isSidebarCollapsed]);
+
   // When a new tab is opened, automatically switch to the terminal view
   useEffect(() => {
     if (activeTabId) {
@@ -39,22 +55,25 @@ function App() {
   const showTerminal = activeNav === "terminal";
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
-      {/* Vault Setup/Unlock Modal */}
-      <VaultModal />
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
+      {/* Top Unified Frameless Window Bar (Termius-style: Menu + Tabs + Window Controls) */}
+      <Header
+        onSelectTab={() => setActiveNav("terminal")}
+        onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+        isSidebarCollapsed={isSidebarCollapsed}
+      />
 
-      {/* Host Create/Edit Modal */}
-      <HostModal />
+      {/* Main Workspace Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Obsidian Sidebar */}
+        <Sidebar
+          activeNav={activeNav}
+          onNavChange={setActiveNav}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
+        />
 
-      {/* Left Obsidian Sidebar */}
-      <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top Header */}
-        <Header onSelectTab={() => setActiveNav("terminal")} />
-
-        {/* Viewport Switching */}
+        {/* Viewport Content Area */}
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
           {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
@@ -101,6 +120,12 @@ function App() {
           {activeNav === "vault" && <VaultOverview />}
         </main>
       </div>
+
+      {/* Vault Setup/Unlock Modal */}
+      <VaultModal />
+
+      {/* Host Create/Edit Modal */}
+      <HostModal />
     </div>
   );
 }
