@@ -10,14 +10,27 @@ interface HostState {
   isHostModalOpen: boolean;
   editingHost: Host | null;
 
+  isFolderModalOpen: boolean;
+  editingFolder: Folder | null;
+  collapsedFolderIds: Set<string>;
+
   refresh: () => Promise<void>;
   saveHost: (input: HostInput, hostId?: string) => Promise<void>;
   deleteHost: (id: string) => Promise<void>;
+
+  saveFolder: (name: string, parentId?: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  toggleFolderCollapse: (folderId: string) => void;
+
   setSelectedTag: (tag: string | null) => void;
   setSearchQuery: (query: string) => void;
   openCreateModal: () => void;
   openEditModal: (host: Host) => void;
   closeHostModal: () => void;
+
+  openCreateFolderModal: () => void;
+  openEditFolderModal: (folder: Folder) => void;
+  closeFolderModal: () => void;
 }
 
 export const useHostStore = create<HostState>((set, get) => ({
@@ -28,6 +41,10 @@ export const useHostStore = create<HostState>((set, get) => ({
   searchQuery: "",
   isHostModalOpen: false,
   editingHost: null,
+
+  isFolderModalOpen: false,
+  editingFolder: null,
+  collapsedFolderIds: new Set(),
 
   refresh: async () => {
     set({ isLoading: true });
@@ -53,9 +70,35 @@ export const useHostStore = create<HostState>((set, get) => ({
     await get().refresh();
   },
 
+  saveFolder: async (name: string, parentId?: string) => {
+    await api.saveFolder(name, parentId);
+    await get().refresh();
+  },
+
+  deleteFolder: async (id: string) => {
+    await api.deleteFolder(id);
+    await get().refresh();
+  },
+
+  toggleFolderCollapse: (folderId: string) => {
+    set((state) => {
+      const next = new Set(state.collapsedFolderIds);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return { collapsedFolderIds: next };
+    });
+  },
+
   setSelectedTag: (tag) => set({ selectedTag: tag }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   openCreateModal: () => set({ isHostModalOpen: true, editingHost: null }),
   openEditModal: (host) => set({ isHostModalOpen: true, editingHost: host }),
   closeHostModal: () => set({ isHostModalOpen: false, editingHost: null }),
+
+  openCreateFolderModal: () => set({ isFolderModalOpen: true, editingFolder: null }),
+  openEditFolderModal: (folder) => set({ isFolderModalOpen: true, editingFolder: folder }),
+  closeFolderModal: () => set({ isFolderModalOpen: false, editingFolder: null }),
 }));
