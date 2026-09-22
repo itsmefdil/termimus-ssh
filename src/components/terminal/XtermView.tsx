@@ -93,8 +93,9 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   }, [sessionId]);
 
   useEffect(() => {
-    if (visible && fitAddonRef.current) {
+    if (visible && fitAddonRef.current && termRef.current) {
       fitAddonRef.current.fit();
+      termRef.current.focus();
     }
   }, [visible]);
 

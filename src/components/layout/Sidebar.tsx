@@ -16,7 +16,7 @@ import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 
-export type ActiveTab = "hosts" | "sftp" | "tunnels" | "vault" | "snippets";
+export type ActiveTab = "hosts" | "terminal" | "sftp" | "tunnels" | "vault" | "snippets";
 
 interface SidebarProps {
   activeNav: ActiveTab;
@@ -32,7 +32,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
 
   const navItems: { icon: typeof Server; label: string; id: ActiveTab; badge?: string | number; badgeDot?: boolean }[] = [
     { icon: Server, label: "Hosts", id: "hosts", badge: hosts.length || undefined },
-    { icon: Terminal, label: "Terminal Sessions", id: "hosts", badge: tabs.length || undefined },
+    { icon: Terminal, label: "Terminal Sessions", id: "terminal", badge: tabs.length || undefined },
     { icon: FolderOpen, label: "SFTP Browser", id: "sftp" },
     { icon: Braces, label: "Snippets & Scripts", id: "snippets", badge: snippets.length || undefined },
     { icon: Waypoints, label: "Port Forwarding", id: "tunnels", badgeDot: activeRuleIds.size > 0 },

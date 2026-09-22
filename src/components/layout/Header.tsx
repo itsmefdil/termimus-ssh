@@ -4,7 +4,11 @@ import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { Host } from "../../lib/api";
 
-export function Header() {
+interface HeaderProps {
+  onSelectTab?: () => void;
+}
+
+export function Header({ onSelectTab }: HeaderProps) {
   const { tabs, activeTabId, setActiveTab, closeSession, openSession } = useSessionStore();
   const { hosts } = useHostStore();
   const [quickInput, setQuickInput] = useState("");
@@ -70,7 +74,10 @@ export function Header() {
             return (
               <div
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  onSelectTab?.();
+                }}
                 className={`group flex items-center gap-1.5 rounded-t-lg px-2.5 py-1 text-xs font-mono min-w-[150px] max-w-[220px] cursor-pointer transition-colors border-b ${
                   isActive
                     ? "border-[var(--primary)] bg-[var(--surface-high)] text-[var(--primary)] font-medium"

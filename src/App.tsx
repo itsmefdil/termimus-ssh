@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useVaultStore } from "./stores/useVaultStore";
 import { useHostStore } from "./stores/useHostStore";
 import { useSessionStore } from "./stores/useSessionStore";
@@ -29,12 +29,14 @@ function App() {
     }
   }, [isUnlocked, refreshHosts]);
 
-  // When a tab is opened, automatically switch to hosts view to display terminal
+  // When a new tab is opened, automatically switch to the terminal view
   useEffect(() => {
-    if (activeTabId && tabs.length > 0) {
-      setActiveNav("hosts");
+    if (activeTabId) {
+      setActiveNav("terminal");
     }
-  }, [activeTabId, tabs.length]);
+  }, [activeTabId]);
+
+  const showTerminal = activeNav === "terminal";
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
@@ -50,17 +52,50 @@ function App() {
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header */}
-        <Header />
+        <Header onSelectTab={() => setActiveNav("terminal")} />
 
         {/* Viewport Switching */}
-        <main className="flex flex-1 overflow-hidden bg-[var(--canvas)]">
-          {activeNav === "sftp" ? (
-            <SftpView />
-          ) : activeNav === "tunnels" ? (
-            <TunnelView />
-          ) : activeNav === "snippets" ? (
-            <SnippetView />
-          ) : activeNav === "vault" ? (
+        <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
+          {/* Terminal sessions stay mounted at all times so switching tabs/views never
+              tears down or reconnects the underlying SSH session. Visibility is toggled
+              purely with CSS, same technique XtermView already uses per-tab. */}
+          <div
+            className="absolute inset-0"
+            style={{ display: showTerminal ? "block" : "none" }}
+          >
+            {tabs.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-center text-[var(--text-muted)]">
+                <div>
+                  <p className="text-sm font-medium">No open terminal</p>
+                  <p className="text-xs mt-1">Select a host to connect via SSH</p>
+                </div>
+              </div>
+            ) : (
+              tabs.map((tab) => (
+                <XtermView
+                  key={tab.id}
+                  sessionId={tab.id}
+                  hostId={tab.hostId}
+                  visible={showTerminal && tab.id === activeTabId}
+                />
+              ))
+            )}
+          </div>
+
+          {activeNav === "hosts" && (
+            <HostList
+              onOpenSftp={() => setActiveNav("sftp")}
+              onOpenTunnels={() => setActiveNav("tunnels")}
+            />
+          )}
+
+          {activeNav === "sftp" && <SftpView />}
+
+          {activeNav === "tunnels" && <TunnelView />}
+
+          {activeNav === "snippets" && <SnippetView />}
+
+          {activeNav === "vault" && (
             <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
               <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-xl">
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--tertiary)]/15 text-[var(--tertiary)]">
@@ -96,25 +131,6 @@ function App() {
                 </button>
               </div>
             </div>
-          ) : (
-            // Default "hosts" view: If active session is selected, render terminal; otherwise render Host Explorer
-            tabs.length > 0 && activeTabId ? (
-              <div className="relative flex-1 overflow-hidden bg-[var(--canvas)]">
-                {tabs.map((tab) => (
-                  <XtermView
-                    key={tab.id}
-                    sessionId={tab.id}
-                    hostId={tab.hostId}
-                    visible={tab.id === activeTabId}
-                  />
-                ))}
-              </div>
-            ) : (
-              <HostList
-                onOpenSftp={() => setActiveNav("sftp")}
-                onOpenTunnels={() => setActiveNav("tunnels")}
-              />
-            )
           )}
         </main>
       </div>
