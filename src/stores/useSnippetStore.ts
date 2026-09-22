@@ -1,0 +1,49 @@
+import { create } from "zustand";
+import { api, Snippet, SnippetInput } from "../lib/api";
+
+interface SnippetState {
+  snippets: Snippet[];
+  isLoading: boolean;
+  error: string | null;
+  isModalOpen: boolean;
+  editingSnippet: Snippet | null;
+
+  refresh: () => Promise<void>;
+  saveSnippet: (input: SnippetInput, snippetId?: string) => Promise<void>;
+  deleteSnippet: (id: string) => Promise<void>;
+  openCreateModal: () => void;
+  openEditModal: (snippet: Snippet) => void;
+  closeModal: () => void;
+}
+
+export const useSnippetStore = create<SnippetState>((set, get) => ({
+  snippets: [],
+  isLoading: false,
+  error: null,
+  isModalOpen: false,
+  editingSnippet: null,
+
+  refresh: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const snippets = await api.listSnippets();
+      set({ snippets, isLoading: false });
+    } catch (e) {
+      set({ isLoading: false, error: String(e) });
+    }
+  },
+
+  saveSnippet: async (input, snippetId) => {
+    await api.saveSnippet(input, snippetId);
+    await get().refresh();
+  },
+
+  deleteSnippet: async (id: string) => {
+    await api.deleteSnippet(id);
+    await get().refresh();
+  },
+
+  openCreateModal: () => set({ isModalOpen: true, editingSnippet: null }),
+  openEditModal: (snippet) => set({ isModalOpen: true, editingSnippet: snippet }),
+  closeModal: () => set({ isModalOpen: false, editingSnippet: null }),
+}));

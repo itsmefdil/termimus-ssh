@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput};
+use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -506,4 +506,44 @@ pub async fn tunnel_active_list(
     state: State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
     Ok(state.tunnel.list_active().await)
+}
+
+// ================= SNIPPET COMMANDS =================
+
+#[tauri::command]
+pub fn snippet_list(state: State<AppState>) -> Result<Vec<Snippet>, String> {
+    state.db.list_snippets().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn snippet_save(
+    state: State<AppState>,
+    input: SnippetInput,
+    snippet_id: Option<String>,
+) -> Result<Snippet, String> {
+    let now = Utc::now().to_rfc3339();
+    let id = snippet_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let existing = state.db.list_snippets()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|s| s.id == id);
+    let created_at = existing.map(|s| s.created_at).unwrap_or(now.clone());
+
+    let snippet = Snippet {
+        id,
+        title: input.title,
+        command: input.command,
+        tags: input.tags,
+        created_at,
+        updated_at: now,
+    };
+
+    state.db.save_snippet(&snippet).map_err(|e| e.to_string())?;
+    Ok(snippet)
+}
+
+#[tauri::command]
+pub fn snippet_delete(state: State<AppState>, id: String) -> Result<(), String> {
+    state.db.delete_snippet(&id).map_err(|e| e.to_string())
 }

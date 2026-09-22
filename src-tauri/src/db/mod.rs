@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, PortForwardRule};
+use models::{Folder, Host, Credential, PortForwardRule, Snippet};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -77,6 +77,15 @@ impl Database {
                 remote_port INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS snippets (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                command TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             ",
         )?;
@@ -334,6 +343,58 @@ impl Database {
     pub fn delete_port_forward(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_snippets(&self) -> Result<Vec<Snippet>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, command, tags, created_at, updated_at FROM snippets ORDER BY title ASC"
+        )?;
+
+        let snippets = stmt.query_map([], |row| {
+            let tags_str: String = row.get(3)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(Snippet {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                command: row.get(2)?,
+                tags,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok(snippets)
+    }
+
+    pub fn save_snippet(&self, snippet: &Snippet) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let tags_str = serde_json::to_string(&snippet.tags).unwrap_or_else(|_| "[]".to_string());
+
+        conn.execute(
+            "INSERT INTO snippets (id, title, command, tags, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title,
+                command=excluded.command,
+                tags=excluded.tags,
+                updated_at=excluded.updated_at",
+            params![
+                snippet.id,
+                snippet.title,
+                snippet.command,
+                tags_str,
+                snippet.created_at,
+                snippet.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_snippet(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
         Ok(())
     }
 

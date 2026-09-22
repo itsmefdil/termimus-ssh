@@ -59,6 +59,9 @@ pub fn run() {
             commands::tunnel_start,
             commands::tunnel_stop,
             commands::tunnel_active_list,
+            commands::snippet_list,
+            commands::snippet_save,
+            commands::snippet_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");

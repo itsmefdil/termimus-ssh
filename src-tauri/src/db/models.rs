@@ -124,3 +124,20 @@ pub struct PortForwardInput {
     pub remote_address: String,
     pub remote_port: u16,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snippet {
+    pub id: String,
+    pub title: String,
+    pub command: String,
+    pub tags: Vec<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SnippetInput {
+    pub title: String,
+    pub command: String,
+    pub tags: Vec<String>,
+}

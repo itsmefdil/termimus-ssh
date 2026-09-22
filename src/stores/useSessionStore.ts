@@ -19,9 +19,10 @@ interface SessionState {
   setActiveTab: (sessionId: string) => void;
   setSessionConnected: (sessionId: string, connected: boolean) => void;
   setSessionError: (sessionId: string, error: string) => void;
+  sendTextToActiveSession: (text: string) => Promise<boolean>;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
   activeTabId: null,
 
@@ -82,5 +83,19 @@ export const useSessionStore = create<SessionState>((set) => ({
         t.id === sessionId ? { ...t, error, connecting: false } : t
       ),
     }));
+  },
+
+  sendTextToActiveSession: async (text: string) => {
+    const { activeTabId, tabs } = get();
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (!activeTabId || !activeTab || !activeTab.connected) {
+      return false;
+    }
+
+    // Append newline so the command executes immediately, like pressing Enter.
+    const payload = text.endsWith("\n") ? text : `${text}\n`;
+    const bytes = Array.from(new TextEncoder().encode(payload));
+    await api.writeSsh(activeTabId, bytes);
+    return true;
   },
 }));

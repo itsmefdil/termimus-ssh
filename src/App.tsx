@@ -18,6 +18,7 @@ import { TabBar } from "./components/terminal/TabBar";
 import { XtermView } from "./components/terminal/XtermView";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
+import { SnippetView } from "./components/snippets/SnippetView";
 
 type ActiveTab = "hosts" | "sftp" | "tunnels" | "vault" | "snippets";
 
@@ -99,6 +100,10 @@ function App() {
       ) : activeNav === "tunnels" ? (
         <div className="flex flex-1 overflow-hidden">
           <TunnelView />
+        </div>
+      ) : activeNav === "snippets" ? (
+        <div className="flex flex-1 overflow-hidden">
+          <SnippetView />
         </div>
       ) : (
         <>

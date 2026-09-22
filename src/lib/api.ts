@@ -69,6 +69,21 @@ export interface PortForwardInput {
   remote_port: number;
 }
 
+export interface Snippet {
+  id: string;
+  title: string;
+  command: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SnippetInput {
+  title: string;
+  command: string;
+  tags: string[];
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -135,4 +150,10 @@ export const api = {
   startTunnel: (ruleId: string) => invoke<void>("tunnel_start", { ruleId }),
   stopTunnel: (ruleId: string) => invoke<void>("tunnel_stop", { ruleId }),
   listActiveTunnels: () => invoke<string[]>("tunnel_active_list"),
+
+  // Snippets
+  listSnippets: () => invoke<Snippet[]>("snippet_list"),
+  saveSnippet: (input: SnippetInput, snippetId?: string) =>
+    invoke<Snippet>("snippet_save", { input, snippetId: snippetId ?? null }),
+  deleteSnippet: (id: string) => invoke<void>("snippet_delete", { id }),
 };
