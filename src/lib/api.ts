@@ -84,6 +84,12 @@ export interface SnippetInput {
   tags: string[];
 }
 
+export interface PingResult {
+  host_id: string;
+  latency_ms?: number | null;
+  online: boolean;
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -164,4 +170,9 @@ export const api = {
   saveSnippet: (input: SnippetInput, snippetId?: string) =>
     invoke<Snippet>("snippet_save", { input, snippetId: snippetId ?? null }),
   deleteSnippet: (id: string) => invoke<void>("snippet_delete", { id }),
+
+  // Ping / Latency
+  pingHost: (address: string, port: number) =>
+    invoke<number | null>("ping_host", { address, port }),
+  pingHosts: () => invoke<PingResult[]>("ping_hosts"),
 };

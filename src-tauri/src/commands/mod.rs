@@ -576,3 +576,59 @@ pub fn snippet_save(
 pub fn snippet_delete(state: State<AppState>, id: String) -> Result<(), String> {
     state.db.delete_snippet(&id).map_err(|e| e.to_string())
 }
+
+// ================= PING / LATENCY COMMANDS =================
+
+#[derive(Serialize, Clone)]
+pub struct PingResult {
+    pub host_id: String,
+    pub latency_ms: Option<u32>,
+    pub online: bool,
+}
+
+async fn tcp_ping_one(address: String, port: u16) -> Option<u32> {
+    let start = std::time::Instant::now();
+    let addr = format!("{address}:{port}");
+    let connect_fut = tokio::net::TcpStream::connect(&addr);
+
+    match tokio::time::timeout(std::time::Duration::from_millis(2500), connect_fut).await {
+        Ok(Ok(_stream)) => Some(start.elapsed().as_millis() as u32),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub async fn ping_host(address: String, port: u16) -> Result<Option<u32>, String> {
+    Ok(tcp_ping_one(address, port).await)
+}
+
+#[tauri::command]
+pub async fn ping_hosts(
+    state: State<'_, AppState>,
+) -> Result<Vec<PingResult>, String> {
+    let hosts = state.db.list_hosts().map_err(|e| e.to_string())?;
+
+    let mut handles = Vec::new();
+    for host in hosts {
+        let host_id = host.id.clone();
+        let address = host.address.clone();
+        let port = host.port;
+        handles.push(tokio::spawn(async move {
+            let latency_ms = tcp_ping_one(address, port).await;
+            PingResult {
+                host_id,
+                online: latency_ms.is_some(),
+                latency_ms,
+            }
+        }));
+    }
+
+    let mut results = Vec::new();
+    for handle in handles {
+        if let Ok(result) = handle.await {
+            results.push(result);
+        }
+    }
+
+    Ok(results)
+}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Server,
   Terminal,
@@ -13,13 +13,17 @@ import {
   ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
+  Loader2,
 } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useSftpStore } from "../../stores/useSftpStore";
+import { usePingStore } from "../../stores/usePingStore";
 import { FolderModal } from "./FolderModal";
 import { Host, Folder } from "../../lib/api";
+
+const PING_INTERVAL_MS = 15000;
 
 interface HostListProps {
   onOpenSftp: () => void;
@@ -45,8 +49,18 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
   const { tabs, openSession } = useSessionStore();
   const { activeRuleIds } = useTunnelStore();
   const { connectRemote } = useSftpStore();
+  const { statusByHostId, isPinging, pingAll } = usePingStore();
 
   const [selectedTag, setSelectedTag] = useState<string>("All");
+
+  // Initial ping and periodic background check
+  useEffect(() => {
+    if (hosts.length > 0) {
+      pingAll();
+      const interval = setInterval(pingAll, PING_INTERVAL_MS);
+      return () => clearInterval(interval);
+    }
+  }, [hosts.length, pingAll]);
 
   // Extract all unique tags
   const allTags = useMemo(() => {
@@ -54,6 +68,28 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
     hosts.forEach((h) => h.tags.forEach((t) => set.add(t)));
     return Array.from(set);
   }, [hosts]);
+
+  // Calculate live health statistics
+  const { offlineCount, healthPercentage } = useMemo(() => {
+    if (hosts.length === 0) {
+      return { offlineCount: 0, healthPercentage: 100 };
+    }
+
+    let online = 0;
+    let offline = 0;
+    for (const h of hosts) {
+      const st = statusByHostId[h.id];
+      if (st) {
+        if (st.online) online++;
+        else offline++;
+      } else {
+        online++;
+      }
+    }
+
+    const pct = Math.round((online / hosts.length) * 100);
+    return { offlineCount: offline, healthPercentage: pct };
+  }, [hosts, statusByHostId]);
 
   const filteredHosts = useMemo(() => {
     let list = hosts;
@@ -182,17 +218,39 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
 
         <div className="bg-[var(--surface-low)] p-3 rounded-xl flex items-center justify-between border border-[var(--border)]">
           <div className="flex flex-col">
-            <span className="font-mono text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
-              System Health
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+                System Health
+              </span>
+              {isPinging && <Loader2 size={10} className="animate-spin text-[var(--primary)]" />}
+            </div>
             <div className="flex items-baseline gap-1.5 mt-1">
-              <span className="text-lg font-semibold text-[var(--success)]">100%</span>
-              <span className="font-mono text-[10px] text-[var(--text-muted)]">All Online</span>
+              <span
+                className={`text-lg font-semibold ${
+                  healthPercentage === 100
+                    ? "text-[var(--success)]"
+                    : healthPercentage >= 70
+                    ? "text-[var(--warning)]"
+                    : "text-[var(--danger)]"
+                }`}
+              >
+                {healthPercentage}%
+              </span>
+              <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                {offlineCount > 0 ? `${offlineCount} Unreachable` : "All Reachable"}
+              </span>
             </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-[var(--surface-high)] flex items-center justify-center text-[var(--success)]">
+          <button
+            onClick={() => pingAll()}
+            title="Refresh ping"
+            disabled={isPinging}
+            className={`w-8 h-8 rounded-lg bg-[var(--surface-high)] flex items-center justify-center transition-colors hover:text-[var(--primary)] ${
+              healthPercentage === 100 ? "text-[var(--success)]" : "text-[var(--warning)]"
+            }`}
+          >
             <AlertTriangle size={16} />
-          </div>
+          </button>
         </div>
       </div>
 
@@ -352,19 +410,25 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                         {section.items.map((host) => {
                           const isConnected = tabs.some((t) => t.hostId === host.id);
+                          const ping = statusByHostId[host.id];
+                          const isOnline = ping ? ping.online : true;
+                          const latency = ping?.latencyMs;
+
                           return (
                             <div
                               key={host.id}
                               className="group relative flex flex-col justify-between rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-3.5 hover:border-[var(--primary)]/60 transition-all shadow-sm"
                             >
                               <div>
-                                {/* Card Header: Status + Label */}
+                                {/* Card Header: Status + Label + Latency Badge */}
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span
                                       className={`h-2 w-2 rounded-full shrink-0 ${
                                         isConnected
                                           ? "bg-[var(--primary)] animate-pulse"
+                                          : !isOnline
+                                          ? "bg-[var(--danger)]"
                                           : "bg-[var(--success)]"
                                       }`}
                                     />
@@ -373,21 +437,48 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                                     </h3>
                                   </div>
 
-                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                      onClick={() => openEditModal(host)}
-                                      title="Edit host"
-                                      className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
-                                    >
-                                      <Pencil size={12} />
-                                    </button>
-                                    <button
-                                      onClick={(e) => handleDelete(e, host.id)}
-                                      title="Delete host"
-                                      className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)]"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {/* Ping Latency Badge */}
+                                    {ping ? (
+                                      ping.online && latency !== null && latency !== undefined ? (
+                                        <span
+                                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-medium border ${
+                                            latency < 80
+                                              ? "bg-[var(--primary)]/10 text-[var(--primary)] border-[var(--primary)]/30"
+                                              : latency < 200
+                                              ? "bg-[var(--secondary)]/10 text-[var(--secondary)] border-[var(--secondary)]/30"
+                                              : "bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/30"
+                                          }`}
+                                        >
+                                          {latency}ms
+                                        </span>
+                                      ) : (
+                                        <span className="rounded bg-[var(--danger)]/10 text-[var(--danger)] border border-[var(--danger)]/30 px-1.5 py-0.5 font-mono text-[10px] font-medium">
+                                          Offline
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="rounded bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)] px-1.5 py-0.5 font-mono text-[10px]">
+                                        ···
+                                      </span>
+                                    )}
+
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={() => openEditModal(host)}
+                                        title="Edit host"
+                                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+                                      >
+                                        <Pencil size={12} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => handleDelete(e, host.id)}
+                                        title="Delete host"
+                                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)]"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
 

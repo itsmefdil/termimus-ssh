@@ -66,6 +66,8 @@ pub fn run() {
             commands::snippet_list,
             commands::snippet_save,
             commands::snippet_delete,
+            commands::ping_host,
+            commands::ping_hosts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");
