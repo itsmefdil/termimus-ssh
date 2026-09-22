@@ -3,17 +3,36 @@
 
 @layer base {
   :root {
-    --background: #0f1117;
-    --sidebar: #131722;
-    --card: #181d2a;
-    --border: #232936;
-    --text-primary: #e6edf3;
-    --text-muted: #8b949e;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --success: #10b981;
-    --danger: #ef4444;
-    --warning: #f59e0b;
+    --canvas: #0a0e14;
+    --surface: #10141a;
+    --surface-low: #181c22;
+    --surface-container: #1c2026;
+    --surface-high: #262a31;
+    --surface-highest: #31353c;
+    --border: #262a31;
+    --border-subtle: #30363d;
+    --border-muted: #1f242c;
+
+    --primary: #00d2b4;
+    --primary-hover: #2adec0;
+    --on-primary: #00382e;
+
+    --secondary: #38bdf8;
+    --tertiary: #cbacff;
+    --success: #3fb950;
+    --danger: #f85149;
+    --warning: #e3b341;
+
+    --text-primary: #f0f6fc;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+
+    /* Backward-compat aliases for older components */
+    --background: var(--canvas);
+    --sidebar: var(--surface-low);
+    --card: var(--surface-container);
+    --accent: var(--primary);
+    --accent-hover: var(--primary-hover);
   }
 
   * {
@@ -23,26 +42,31 @@
   }
 
   body {
-    background-color: var(--background);
+    background-color: var(--canvas);
     color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
     overflow: hidden;
     user-select: none;
   }
 
-  /* Custom scrollbar */
+  .font-mono, [class*="font-mono"], code, pre, kbd {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace !important;
+    font-feature-settings: 'liga' on, 'calt' on;
+  }
+
+  /* Custom subtle scrollbars */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #272f3d;
+    background: #262a31;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3b4556;
+    background: #3b424e;
   }
 }

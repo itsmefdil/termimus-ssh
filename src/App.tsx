@@ -1,34 +1,17 @@
 import { useState, useEffect } from "react";
-import {
-  Server,
-  FolderTree,
-  Key,
-  Terminal,
-  ArrowLeftRight,
-  Settings,
-  Lock,
-} from "lucide-react";
 import { useVaultStore } from "./stores/useVaultStore";
 import { useHostStore } from "./stores/useHostStore";
 import { useSessionStore } from "./stores/useSessionStore";
+import { Sidebar, ActiveTab } from "./components/layout/Sidebar";
+import { Header } from "./components/layout/Header";
 import { HostList } from "./components/hosts/HostList";
 import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
-import { TabBar } from "./components/terminal/TabBar";
 import { XtermView } from "./components/terminal/XtermView";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
-
-type ActiveTab = "hosts" | "sftp" | "tunnels" | "vault" | "snippets";
-
-const NAV_ITEMS: { icon: typeof Server; label: string; id: ActiveTab }[] = [
-  { icon: Server, label: "Hosts", id: "hosts" },
-  { icon: FolderTree, label: "SFTP", id: "sftp" },
-  { icon: ArrowLeftRight, label: "Port Forwarding", id: "tunnels" },
-  { icon: Key, label: "Vault", id: "vault" },
-  { icon: Terminal, label: "Snippets", id: "snippets" },
-];
+import { KeyRound, ShieldCheck, Lock } from "lucide-react";
 
 function App() {
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
@@ -46,99 +29,95 @@ function App() {
     }
   }, [isUnlocked, refreshHosts]);
 
+  // When a tab is opened, automatically switch to hosts view to display terminal
+  useEffect(() => {
+    if (activeTabId && tabs.length > 0) {
+      setActiveNav("hosts");
+    }
+  }, [activeTabId, tabs.length]);
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)] text-[var(--text-primary)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
       {/* Vault Setup/Unlock Modal */}
       <VaultModal />
 
       {/* Host Create/Edit Modal */}
       <HostModal />
 
-      {/* Left Icon Rail */}
-      <aside className="flex w-14 flex-col items-center gap-1 border-r border-[var(--border)] bg-[var(--sidebar)] py-3">
-        {NAV_ITEMS.map(({ icon: Icon, label, id }) => {
-          const active = activeNav === id;
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveNav(id)}
-              title={label}
-              className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
-                active
-                  ? "bg-[var(--accent)] text-white"
-                  : "text-[var(--text-muted)] hover:bg-[var(--card)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <Icon size={18} />
-            </button>
-          );
-        })}
-        <div className="mt-auto flex flex-col gap-1">
-          {isUnlocked && (
-            <button
-              onClick={lockVault}
-              title="Lock Vault"
-              className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--card)] hover:text-[var(--warning)]"
-            >
-              <Lock size={18} />
-            </button>
-          )}
-          <button
-            title="Settings"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--card)] hover:text-[var(--text-primary)]"
-          >
-            <Settings size={18} />
-          </button>
-        </div>
-      </aside>
+      {/* Left Obsidian Sidebar */}
+      <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
 
-      {/* Conditional Content based on Active Nav */}
-      {activeNav === "sftp" ? (
-        <div className="flex flex-1 overflow-hidden">
-          <SftpView />
-        </div>
-      ) : activeNav === "tunnels" ? (
-        <div className="flex flex-1 overflow-hidden">
-          <TunnelView />
-        </div>
-      ) : activeNav === "snippets" ? (
-        <div className="flex flex-1 overflow-hidden">
-          <SnippetView />
-        </div>
-      ) : (
-        <>
-          {/* Host Explorer Sidebar */}
-          <HostList />
+      {/* Main Content Area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top Header */}
+        <Header />
 
-          {/* Main Terminal Area */}
-          <main className="flex flex-1 flex-col overflow-hidden bg-[var(--background)]">
-            <TabBar />
-
-            <div className="relative flex-1 overflow-hidden">
-              {tabs.length === 0 ? (
-                <div className="flex h-full items-center justify-center">
-                  <div className="text-center text-[var(--text-muted)]">
-                    <Terminal size={44} className="mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-medium">No open terminal</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">
-                      Select a host from the sidebar to connect via SSH
-                    </p>
+        {/* Viewport Switching */}
+        <main className="flex flex-1 overflow-hidden bg-[var(--canvas)]">
+          {activeNav === "sftp" ? (
+            <SftpView />
+          ) : activeNav === "tunnels" ? (
+            <TunnelView />
+          ) : activeNav === "snippets" ? (
+            <SnippetView />
+          ) : activeNav === "vault" ? (
+            <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+              <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-xl">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--tertiary)]/15 text-[var(--tertiary)]">
+                  <KeyRound size={24} />
+                </div>
+                <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                  Zero-Knowledge Security Vault
+                </h2>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                  All passwords and SSH private keys are locally protected with Argon2id key derivation and AES-256-GCM encryption.
+                </p>
+                <div className="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-container)] p-3 text-left font-mono text-xs space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Vault Status:</span>
+                    <span className="text-[var(--primary)] font-semibold flex items-center gap-1">
+                      <ShieldCheck size={14} /> Unlocked & Active
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Cipher:</span>
+                    <span className="text-[var(--text-primary)]">AES-256-GCM (96-bit nonce)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--text-muted)]">Key Derivation:</span>
+                    <span className="text-[var(--text-primary)]">Argon2id (16-byte OS salt)</span>
                   </div>
                 </div>
-              ) : (
-                tabs.map((tab) => (
+                <button
+                  onClick={lockVault}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--surface-high)] py-2 text-xs font-semibold text-[var(--warning)] hover:bg-[var(--surface-highest)] transition-colors"
+                >
+                  <Lock size={14} /> Lock Vault Now
+                </button>
+              </div>
+            </div>
+          ) : (
+            // Default "hosts" view: If active session is selected, render terminal; otherwise render Host Explorer
+            tabs.length > 0 && activeTabId ? (
+              <div className="relative flex-1 overflow-hidden bg-[var(--canvas)]">
+                {tabs.map((tab) => (
                   <XtermView
                     key={tab.id}
                     sessionId={tab.id}
                     hostId={tab.hostId}
                     visible={tab.id === activeTabId}
                   />
-                ))
-              )}
-            </div>
-          </main>
-        </>
-      )}
+                ))}
+              </div>
+            ) : (
+              <HostList
+                onOpenSftp={() => setActiveNav("sftp")}
+                onOpenTunnels={() => setActiveNav("tunnels")}
+              />
+            )
+          )}
+        </main>
+      </div>
     </div>
   );
 }
