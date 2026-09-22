@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput};
+use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -254,6 +254,7 @@ pub async fn ssh_connect(
         .ssh
         .connect(
             app,
+            state.db.clone(),
             session_id,
             host.address,
             host.port,
@@ -311,6 +312,7 @@ pub async fn sftp_connect(
     state
         .sftp
         .connect(
+            state.db.clone(),
             session_id,
             host_id,
             host.address,
@@ -509,6 +511,7 @@ pub async fn tunnel_start(
         .tunnel
         .start_local_forward(
             app,
+            state.db.clone(),
             rule_id,
             host.address,
             host.port,
@@ -631,4 +634,20 @@ pub async fn ping_hosts(
     }
 
     Ok(results)
+}
+
+// ================= KNOWN HOSTS / KEY FINGERPRINT COMMANDS =================
+
+#[tauri::command]
+pub fn known_host_list(state: State<AppState>) -> Result<Vec<KnownHost>, String> {
+    state.db.list_known_hosts().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn known_host_delete(
+    state: State<AppState>,
+    address: String,
+    port: u16,
+) -> Result<(), String> {
+    state.db.delete_known_host(&address, port).map_err(|e| e.to_string())
 }

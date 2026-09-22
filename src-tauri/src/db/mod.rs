@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, PortForwardRule, Snippet};
+use models::{Folder, Host, Credential, PortForwardRule, Snippet, KnownHost};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -86,6 +86,16 @@ impl Database {
                 tags TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS known_hosts (
+                address TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                key_type TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                PRIMARY KEY (address, port)
             );
             ",
         )?;
@@ -396,6 +406,74 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn get_known_host(&self, address: &str, port: u16) -> Result<Option<KnownHost>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT address, port, key_type, fingerprint, first_seen_at, last_seen_at FROM known_hosts WHERE address = ?1 AND port = ?2"
+        )?;
+        let mut rows = stmt.query(params![address, port])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(KnownHost {
+                address: row.get(0)?,
+                port: row.get(1)?,
+                key_type: row.get(2)?,
+                fingerprint: row.get(3)?,
+                first_seen_at: row.get(4)?,
+                last_seen_at: row.get(5)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save_known_host(&self, entry: &KnownHost) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO known_hosts (address, port, key_type, fingerprint, first_seen_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(address, port) DO UPDATE SET
+                key_type=excluded.key_type,
+                fingerprint=excluded.fingerprint,
+                last_seen_at=excluded.last_seen_at",
+            params![
+                entry.address,
+                entry.port,
+                entry.key_type,
+                entry.fingerprint,
+                entry.first_seen_at,
+                entry.last_seen_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_known_host(&self, address: &str, port: u16) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM known_hosts WHERE address = ?1 AND port = ?2",
+            params![address, port],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_known_hosts(&self) -> Result<Vec<KnownHost>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT address, port, key_type, fingerprint, first_seen_at, last_seen_at FROM known_hosts ORDER BY last_seen_at DESC"
+        )?;
+        let list = stmt.query_map([], |row| {
+            Ok(KnownHost {
+                address: row.get(0)?,
+                port: row.get(1)?,
+                key_type: row.get(2)?,
+                fingerprint: row.get(3)?,
+                first_seen_at: row.get(4)?,
+                last_seen_at: row.get(5)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(list)
     }
 
     // Vault metadata: salt & verification token to confirm correct master password

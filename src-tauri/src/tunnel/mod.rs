@@ -8,6 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
 
+use crate::db::Database;
 use crate::ssh::{SshAuth, SshClientHandler};
 
 pub struct ActiveTunnel {
@@ -40,6 +41,7 @@ impl TunnelManager {
     pub async fn start_local_forward(
         &self,
         app: AppHandle,
+        db: Arc<Database>,
         rule_id: String,
         address: String,
         port: u16,
@@ -58,7 +60,12 @@ impl TunnelManager {
         }
 
         let config = Arc::new(client::Config::default());
-        let mut handle = client::connect(config, (address.as_str(), port), SshClientHandler)
+        let handler = SshClientHandler {
+            address: address.clone(),
+            port,
+            db,
+        };
+        let mut handle = client::connect(config, (address.as_str(), port), handler)
             .await
             .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
 

@@ -141,3 +141,13 @@ pub struct SnippetInput {
     pub command: String,
     pub tags: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnownHost {
+    pub address: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+    pub first_seen_at: String,
+    pub last_seen_at: String,
+}

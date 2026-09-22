@@ -1,4 +1,5 @@
 use russh::client::{self, Handle, Handler};
+use russh::keys::ssh_key::HashAlg;
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
 use russh::Disconnect;
 use std::collections::HashMap;
@@ -6,16 +7,62 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 
-pub struct SshClientHandler;
+use crate::db::models::KnownHost;
+use crate::db::Database;
+
+/// Verifies the server's host key against the locally stored known_hosts
+/// table (Trust On First Use), rejecting the connection outright if the
+/// key ever changes for a previously trusted address:port — this is the
+/// same protection OpenSSH's known_hosts file provides against MITM
+/// attacks and impersonated servers.
+pub struct SshClientHandler {
+    pub address: String,
+    pub port: u16,
+    pub db: Arc<Database>,
+}
 
 impl Handler for SshClientHandler {
-    type Error = russh::Error;
+    type Error = anyhow::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let fingerprint = format!("{}", server_public_key.fingerprint(HashAlg::Sha256));
+        let key_type = server_public_key.algorithm().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let existing = self.db.get_known_host(&self.address, self.port).ok().flatten();
+
+        match existing {
+            None => {
+                // Trust On First Use: remember this key for future connections.
+                let entry = KnownHost {
+                    address: self.address.clone(),
+                    port: self.port,
+                    key_type,
+                    fingerprint,
+                    first_seen_at: now.clone(),
+                    last_seen_at: now,
+                };
+                let _ = self.db.save_known_host(&entry);
+                Ok(true)
+            }
+            Some(known) if known.fingerprint == fingerprint => {
+                // Key matches what we trusted before — refresh last_seen_at.
+                let mut updated = known;
+                updated.last_seen_at = now;
+                let _ = self.db.save_known_host(&updated);
+                Ok(true)
+            }
+            Some(known) => {
+                // Key mismatch: potential MITM attack, server reinstall, or IP reuse.
+                Err(anyhow::anyhow!(
+                    "REMOTE HOST IDENTIFICATION HAS CHANGED for {}:{}! Server presented a key with fingerprint {} but the previously trusted key was {} (first trusted {}). This could indicate a man-in-the-middle attack, or the server may have been reinstalled. Remove the old entry from Known Hosts if you trust this change.",
+                    self.address, self.port, fingerprint, known.fingerprint, known.first_seen_at
+                ))
+            }
+        }
     }
 }
 
@@ -49,6 +96,7 @@ impl SessionManager {
     pub async fn connect(
         &self,
         app: AppHandle,
+        db: Arc<Database>,
         session_id: String,
         address: String,
         port: u16,
@@ -58,7 +106,12 @@ impl SessionManager {
         rows: u16,
     ) -> Result<(), String> {
         let config = Arc::new(client::Config::default());
-        let mut handle = client::connect(config, (address.as_str(), port), SshClientHandler)
+        let handler = SshClientHandler {
+            address: address.clone(),
+            port,
+            db,
+        };
+        let mut handle = client::connect(config, (address.as_str(), port), handler)
             .await
             .map_err(|e| format!("Connection failed: {e}"))?;
 

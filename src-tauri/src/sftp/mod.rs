@@ -11,6 +11,7 @@ use std::time::UNIX_EPOCH;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
+use crate::db::Database;
 use crate::ssh::{SshAuth, SshClientHandler};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ impl SftpManager {
 
     pub async fn connect(
         &self,
+        db: Arc<Database>,
         session_id: String,
         host_id: String,
         address: String,
@@ -52,7 +54,12 @@ impl SftpManager {
         auth: SshAuth,
     ) -> Result<String, String> {
         let config = Arc::new(client::Config::default());
-        let mut handle = client::connect(config, (address.as_str(), port), SshClientHandler)
+        let handler = SshClientHandler {
+            address: address.clone(),
+            port,
+            db,
+        };
+        let mut handle = client::connect(config, (address.as_str(), port), handler)
             .await
             .map_err(|e| format!("SFTP SSH connection failed: {e}"))?;
 

@@ -90,6 +90,15 @@ export interface PingResult {
   online: boolean;
 }
 
+export interface KnownHost {
+  address: string;
+  port: number;
+  key_type: string;
+  fingerprint: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -175,4 +184,9 @@ export const api = {
   pingHost: (address: string, port: number) =>
     invoke<number | null>("ping_host", { address, port }),
   pingHosts: () => invoke<PingResult[]>("ping_hosts"),
+
+  // Known Hosts / MITM Verification
+  listKnownHosts: () => invoke<KnownHost[]>("known_host_list"),
+  deleteKnownHost: (address: string, port: number) =>
+    invoke<void>("known_host_delete", { address, port }),
 };
