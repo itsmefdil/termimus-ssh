@@ -33,6 +33,23 @@
     --card: var(--surface-container);
     --accent: var(--primary);
     --accent-hover: var(--primary-hover);
+
+    color-scheme: dark;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  select, option, input, textarea {
+    color-scheme: dark;
+    background-color: var(--surface-container);
+    color: var(--text-primary);
+  }
+
+  select option {
+    background-color: #161b22;
+    color: #f0f6fc;
   }
 
   * {
