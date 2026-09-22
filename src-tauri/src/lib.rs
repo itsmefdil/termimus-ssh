@@ -2,6 +2,7 @@ pub mod commands;
 pub mod db;
 pub mod sftp;
 pub mod ssh;
+pub mod tunnel;
 pub mod vault;
 
 use commands::AppState;
@@ -9,6 +10,7 @@ use db::Database;
 use sftp::SftpManager;
 use ssh::SessionManager;
 use std::sync::Arc;
+use tunnel::TunnelManager;
 use vault::VaultManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,8 +19,9 @@ pub fn run() {
     let vault = Arc::new(VaultManager::new());
     let ssh = Arc::new(SessionManager::new());
     let sftp = Arc::new(SftpManager::new());
+    let tunnel = Arc::new(TunnelManager::new());
 
-    let state = AppState { db, vault, ssh, sftp };
+    let state = AppState { db, vault, ssh, sftp, tunnel };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -50,6 +53,12 @@ pub fn run() {
             commands::local_list,
             commands::local_mkdir,
             commands::local_delete,
+            commands::tunnel_rule_list,
+            commands::tunnel_rule_save,
+            commands::tunnel_rule_delete,
+            commands::tunnel_start,
+            commands::tunnel_stop,
+            commands::tunnel_active_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");

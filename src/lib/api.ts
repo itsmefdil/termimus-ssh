@@ -47,6 +47,28 @@ export interface FileEntry {
   permissions?: number | null;
 }
 
+export interface PortForwardRule {
+  id: string;
+  host_id: string;
+  label: string;
+  forward_type: "local" | "remote" | "dynamic";
+  local_address: string;
+  local_port: number;
+  remote_address: string;
+  remote_port: number;
+  created_at: string;
+}
+
+export interface PortForwardInput {
+  host_id: string;
+  label: string;
+  forward_type: "local" | "remote" | "dynamic";
+  local_address: string;
+  local_port: number;
+  remote_address: string;
+  remote_port: number;
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -104,4 +126,13 @@ export const api = {
   mkdirLocal: (path: string) => invoke<void>("local_mkdir", { path }),
   deleteLocal: (path: string, isDir: boolean) =>
     invoke<void>("local_delete", { path, isDir }),
+
+  // Port Forwarding / Tunnels
+  listTunnelRules: () => invoke<PortForwardRule[]>("tunnel_rule_list"),
+  saveTunnelRule: (input: PortForwardInput, ruleId?: string) =>
+    invoke<PortForwardRule>("tunnel_rule_save", { input, ruleId: ruleId ?? null }),
+  deleteTunnelRule: (id: string) => invoke<void>("tunnel_rule_delete", { id }),
+  startTunnel: (ruleId: string) => invoke<void>("tunnel_start", { ruleId }),
+  stopTunnel: (ruleId: string) => invoke<void>("tunnel_stop", { ruleId }),
+  listActiveTunnels: () => invoke<string[]>("tunnel_active_list"),
 };

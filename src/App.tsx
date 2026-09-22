@@ -17,6 +17,7 @@ import { VaultModal } from "./components/vault/VaultModal";
 import { TabBar } from "./components/terminal/TabBar";
 import { XtermView } from "./components/terminal/XtermView";
 import { SftpView } from "./components/sftp/SftpView";
+import { TunnelView } from "./components/tunnels/TunnelView";
 
 type ActiveTab = "hosts" | "sftp" | "tunnels" | "vault" | "snippets";
 
@@ -94,6 +95,10 @@ function App() {
       {activeNav === "sftp" ? (
         <div className="flex flex-1 overflow-hidden">
           <SftpView />
+        </div>
+      ) : activeNav === "tunnels" ? (
+        <div className="flex flex-1 overflow-hidden">
+          <TunnelView />
         </div>
       ) : (
         <>

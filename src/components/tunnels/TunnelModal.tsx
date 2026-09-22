@@ -1,0 +1,220 @@
+import { useState, useEffect } from "react";
+import { X, ArrowLeftRight } from "lucide-react";
+import { useTunnelStore } from "../../stores/useTunnelStore";
+import { useHostStore } from "../../stores/useHostStore";
+import { PortForwardInput } from "../../lib/api";
+
+export function TunnelModal() {
+  const { isModalOpen, editingRule, closeModal, saveRule } = useTunnelStore();
+  const { hosts } = useHostStore();
+
+  const [label, setLabel] = useState("");
+  const [hostId, setHostId] = useState("");
+  const [forwardType, setForwardType] = useState<"local" | "remote">("local");
+  const [localAddress, setLocalAddress] = useState("127.0.0.1");
+  const [localPort, setLocalPort] = useState(8080);
+  const [remoteAddress, setRemoteAddress] = useState("127.0.0.1");
+  const [remotePort, setRemotePort] = useState(80);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (editingRule) {
+      setLabel(editingRule.label);
+      setHostId(editingRule.host_id);
+      setForwardType(editingRule.forward_type === "remote" ? "remote" : "local");
+      setLocalAddress(editingRule.local_address);
+      setLocalPort(editingRule.local_port);
+      setRemoteAddress(editingRule.remote_address);
+      setRemotePort(editingRule.remote_port);
+    } else {
+      setLabel("");
+      setHostId(hosts.length > 0 ? hosts[0].id : "");
+      setForwardType("local");
+      setLocalAddress("127.0.0.1");
+      setLocalPort(8080);
+      setRemoteAddress("127.0.0.1");
+      setRemotePort(80);
+    }
+    setError(null);
+  }, [editingRule, isModalOpen, hosts]);
+
+  if (!isModalOpen) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (!label.trim()) {
+      setError("Label is required");
+      return;
+    }
+    if (!hostId) {
+      setError("Please select an SSH host");
+      return;
+    }
+
+    const input: PortForwardInput = {
+      host_id: hostId,
+      label: label.trim(),
+      forward_type: forwardType,
+      local_address: localAddress.trim() || "127.0.0.1",
+      local_port: Number(localPort),
+      remote_address: remoteAddress.trim() || "127.0.0.1",
+      remote_port: Number(remotePort),
+    };
+
+    setSubmitting(true);
+    try {
+      await saveRule(input, editingRule?.id);
+      closeModal();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
+          <div className="flex items-center gap-2">
+            <ArrowLeftRight size={18} className="text-[var(--accent)]" />
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">
+              {editingRule ? "Edit Port Forwarding" : "New Port Forwarding"}
+            </h2>
+          </div>
+          <button
+            onClick={closeModal}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          <div>
+            <label className="mb-1 block font-medium text-[var(--text-muted)]">
+              Rule Name / Label *
+            </label>
+            <input
+              type="text"
+              required
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Postgres DB, Redis, Grafana"
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--accent)] focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block font-medium text-[var(--text-muted)]">
+              SSH Host *
+            </label>
+            <select
+              value={hostId}
+              onChange={(e) => setHostId(e.target.value)}
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+            >
+              <option value="">Select SSH server...</option>
+              {hosts.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.label} ({h.username}@{h.address}:{h.port})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]/60 p-3 space-y-3">
+            <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              Local Endpoint (Your Computer)
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                  Bind IP
+                </label>
+                <input
+                  type="text"
+                  value={localAddress}
+                  onChange={(e) => setLocalAddress(e.target.value)}
+                  placeholder="127.0.0.1"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                  Port *
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={localPort}
+                  onChange={(e) => setLocalPort(Number(e.target.value))}
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]/60 p-3 space-y-3">
+            <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              Destination Endpoint (Target Network)
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                  Destination Host *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={remoteAddress}
+                  onChange={(e) => setRemoteAddress(e.target.value)}
+                  placeholder="127.0.0.1 or db.internal"
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                  Port *
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={remotePort}
+                  onChange={(e) => setRemotePort(Number(e.target.value))}
+                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-[var(--border)]">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="rounded-md px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            >
+              {submitting ? "Saving..." : editingRule ? "Update Rule" : "Create Rule"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

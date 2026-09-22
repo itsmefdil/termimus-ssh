@@ -1,7 +1,8 @@
-use crate::db::models::{Folder, Host, HostInput, Credential};
+use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
+use crate::tunnel::TunnelManager;
 use crate::vault::VaultManager;
 use chrono::Utc;
 use serde::Serialize;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub vault: Arc<VaultManager>,
     pub ssh: Arc<SessionManager>,
     pub sftp: Arc<SftpManager>,
+    pub tunnel: Arc<TunnelManager>,
 }
 
 #[derive(Serialize)]
@@ -412,4 +414,96 @@ pub fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
     } else {
         std::fs::remove_file(&path).map_err(|e| format!("Failed to delete local file: {e}"))
     }
+}
+
+// ================= TUNNEL COMMANDS =================
+
+#[tauri::command]
+pub fn tunnel_rule_list(state: State<AppState>) -> Result<Vec<PortForwardRule>, String> {
+    state.db.list_port_forwards().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn tunnel_rule_save(
+    state: State<AppState>,
+    input: PortForwardInput,
+    rule_id: Option<String>,
+) -> Result<PortForwardRule, String> {
+    let now = Utc::now().to_rfc3339();
+    let id = rule_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let existing = state.db.get_port_forward(&id).map_err(|e| e.to_string())?;
+    let created_at = existing.map(|r| r.created_at).unwrap_or(now);
+
+    let rule = PortForwardRule {
+        id,
+        host_id: input.host_id,
+        label: input.label,
+        forward_type: input.forward_type,
+        local_address: input.local_address,
+        local_port: input.local_port,
+        remote_address: input.remote_address,
+        remote_port: input.remote_port,
+        created_at,
+    };
+
+    state.db.save_port_forward(&rule).map_err(|e| e.to_string())?;
+    Ok(rule)
+}
+
+#[tauri::command]
+pub fn tunnel_rule_delete(state: State<AppState>, id: String) -> Result<(), String> {
+    state.db.delete_port_forward(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn tunnel_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    rule_id: String,
+) -> Result<(), String> {
+    let rule = state
+        .db
+        .get_port_forward(&rule_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Port forwarding rule not found".to_string())?;
+
+    let host = state
+        .db
+        .get_host(&rule.host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Target host not found".to_string())?;
+
+    let auth = resolve_host_auth(&state, &host)?;
+
+    state
+        .tunnel
+        .start_local_forward(
+            app,
+            rule_id,
+            host.address,
+            host.port,
+            host.username,
+            auth,
+            rule.local_address,
+            rule.local_port,
+            rule.remote_address,
+            rule.remote_port,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn tunnel_stop(
+    state: State<'_, AppState>,
+    rule_id: String,
+) -> Result<(), String> {
+    state.tunnel.stop(&rule_id).await
+}
+
+#[tauri::command]
+pub async fn tunnel_active_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    Ok(state.tunnel.list_active().await)
 }

@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential};
+use models::{Folder, Host, Credential, PortForwardRule};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -64,6 +64,19 @@ impl Database {
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL,
                 FOREIGN KEY(credential_id) REFERENCES credentials(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS port_forwards (
+                id TEXT PRIMARY KEY,
+                host_id TEXT NOT NULL,
+                label TEXT NOT NULL,
+                forward_type TEXT NOT NULL DEFAULT 'local',
+                local_address TEXT NOT NULL DEFAULT '127.0.0.1',
+                local_port INTEGER NOT NULL,
+                remote_address TEXT NOT NULL DEFAULT '127.0.0.1',
+                remote_port INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(host_id) REFERENCES hosts(id) ON DELETE CASCADE
             );
             ",
         )?;
@@ -240,6 +253,87 @@ impl Database {
     pub fn delete_folder(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_port_forwards(&self) -> Result<Vec<PortForwardRule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at FROM port_forwards ORDER BY label ASC"
+        )?;
+
+        let rules = stmt.query_map([], |row| {
+            Ok(PortForwardRule {
+                id: row.get(0)?,
+                host_id: row.get(1)?,
+                label: row.get(2)?,
+                forward_type: row.get(3)?,
+                local_address: row.get(4)?,
+                local_port: row.get(5)?,
+                remote_address: row.get(6)?,
+                remote_port: row.get(7)?,
+                created_at: row.get(8)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok(rules)
+    }
+
+    pub fn get_port_forward(&self, id: &str) -> Result<Option<PortForwardRule>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at FROM port_forwards WHERE id = ?1"
+        )?;
+
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(PortForwardRule {
+                id: row.get(0)?,
+                host_id: row.get(1)?,
+                label: row.get(2)?,
+                forward_type: row.get(3)?,
+                local_address: row.get(4)?,
+                local_port: row.get(5)?,
+                remote_address: row.get(6)?,
+                remote_port: row.get(7)?,
+                created_at: row.get(8)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save_port_forward(&self, rule: &PortForwardRule) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO port_forwards (id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                host_id=excluded.host_id,
+                label=excluded.label,
+                forward_type=excluded.forward_type,
+                local_address=excluded.local_address,
+                local_port=excluded.local_port,
+                remote_address=excluded.remote_address,
+                remote_port=excluded.remote_port",
+            params![
+                rule.id,
+                rule.host_id,
+                rule.label,
+                rule.forward_type,
+                rule.local_address,
+                rule.local_port,
+                rule.remote_address,
+                rule.remote_port,
+                rule.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_port_forward(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
         Ok(())
     }
 
