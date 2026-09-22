@@ -1,10 +1,12 @@
 pub mod commands;
 pub mod db;
+pub mod sftp;
 pub mod ssh;
 pub mod vault;
 
 use commands::AppState;
 use db::Database;
+use sftp::SftpManager;
 use ssh::SessionManager;
 use std::sync::Arc;
 use vault::VaultManager;
@@ -14,8 +16,9 @@ pub fn run() {
     let db = Arc::new(Database::new().expect("Failed to initialize SQLite database"));
     let vault = Arc::new(VaultManager::new());
     let ssh = Arc::new(SessionManager::new());
+    let sftp = Arc::new(SftpManager::new());
 
-    let state = AppState { db, vault, ssh };
+    let state = AppState { db, vault, ssh, sftp };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -35,6 +38,18 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::sftp_connect,
+            commands::sftp_list,
+            commands::sftp_mkdir,
+            commands::sftp_delete,
+            commands::sftp_rename,
+            commands::sftp_upload,
+            commands::sftp_download,
+            commands::sftp_disconnect,
+            commands::local_home_dir,
+            commands::local_list,
+            commands::local_mkdir,
+            commands::local_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");

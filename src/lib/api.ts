@@ -38,6 +38,15 @@ export interface VaultStatus {
   is_unlocked: boolean;
 }
 
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified?: number | null;
+  permissions?: number | null;
+}
+
 export const api = {
   // Vault
   getVaultStatus: () => invoke<VaultStatus>("vault_status"),
@@ -70,4 +79,29 @@ export const api = {
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   disconnectSsh: (sessionId: string) =>
     invoke<void>("ssh_disconnect", { sessionId }),
+
+  // SFTP Remote
+  connectSftp: (hostId: string, sessionId: string) =>
+    invoke<string>("sftp_connect", { hostId, sessionId }),
+  listSftp: (sessionId: string, path: string) =>
+    invoke<FileEntry[]>("sftp_list", { sessionId, path }),
+  mkdirSftp: (sessionId: string, path: string) =>
+    invoke<void>("sftp_mkdir", { sessionId, path }),
+  deleteSftp: (sessionId: string, path: string, isDir: boolean) =>
+    invoke<void>("sftp_delete", { sessionId, path, isDir }),
+  renameSftp: (sessionId: string, oldPath: string, newPath: string) =>
+    invoke<void>("sftp_rename", { sessionId, oldPath, newPath }),
+  uploadSftp: (sessionId: string, localPath: string, remotePath: string) =>
+    invoke<void>("sftp_upload", { sessionId, localPath, remotePath }),
+  downloadSftp: (sessionId: string, remotePath: string, localPath: string) =>
+    invoke<void>("sftp_download", { sessionId, remotePath, localPath }),
+  disconnectSftp: (sessionId: string) =>
+    invoke<void>("sftp_disconnect", { sessionId }),
+
+  // Local Filesystem
+  getLocalHomeDir: () => invoke<string>("local_home_dir"),
+  listLocal: (path?: string) => invoke<FileEntry[]>("local_list", { path: path ?? null }),
+  mkdirLocal: (path: string) => invoke<void>("local_mkdir", { path }),
+  deleteLocal: (path: string, isDir: boolean) =>
+    invoke<void>("local_delete", { path, isDir }),
 };

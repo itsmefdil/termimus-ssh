@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Server,
   FolderTree,
@@ -16,8 +16,11 @@ import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
 import { TabBar } from "./components/terminal/TabBar";
 import { XtermView } from "./components/terminal/XtermView";
+import { SftpView } from "./components/sftp/SftpView";
 
-const NAV_ITEMS = [
+type ActiveTab = "hosts" | "sftp" | "tunnels" | "vault" | "snippets";
+
+const NAV_ITEMS: { icon: typeof Server; label: string; id: ActiveTab }[] = [
   { icon: Server, label: "Hosts", id: "hosts" },
   { icon: FolderTree, label: "SFTP", id: "sftp" },
   { icon: ArrowLeftRight, label: "Port Forwarding", id: "tunnels" },
@@ -26,6 +29,7 @@ const NAV_ITEMS = [
 ];
 
 function App() {
+  const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
   const { isUnlocked, refresh: refreshVault, lock: lockVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
   const { tabs, activeTabId } = useSessionStore();
@@ -50,11 +54,12 @@ function App() {
 
       {/* Left Icon Rail */}
       <aside className="flex w-14 flex-col items-center gap-1 border-r border-[var(--border)] bg-[var(--sidebar)] py-3">
-        {NAV_ITEMS.map(({ icon: Icon, label }) => {
-          const active = label === "Hosts";
+        {NAV_ITEMS.map(({ icon: Icon, label, id }) => {
+          const active = activeNav === id;
           return (
             <button
-              key={label}
+              key={id}
+              onClick={() => setActiveNav(id)}
               title={label}
               className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
                 active
@@ -85,36 +90,45 @@ function App() {
         </div>
       </aside>
 
-      {/* Host Explorer Sidebar */}
-      <HostList />
-
-      {/* Main Terminal Area */}
-      <main className="flex flex-1 flex-col overflow-hidden bg-[var(--background)]">
-        <TabBar />
-
-        <div className="relative flex-1 overflow-hidden">
-          {tabs.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center text-[var(--text-muted)]">
-                <Terminal size={44} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-medium">No open terminal</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Select a host from the sidebar to connect via SSH
-                </p>
-              </div>
-            </div>
-          ) : (
-            tabs.map((tab) => (
-              <XtermView
-                key={tab.id}
-                sessionId={tab.id}
-                hostId={tab.hostId}
-                visible={tab.id === activeTabId}
-              />
-            ))
-          )}
+      {/* Conditional Content based on Active Nav */}
+      {activeNav === "sftp" ? (
+        <div className="flex flex-1 overflow-hidden">
+          <SftpView />
         </div>
-      </main>
+      ) : (
+        <>
+          {/* Host Explorer Sidebar */}
+          <HostList />
+
+          {/* Main Terminal Area */}
+          <main className="flex flex-1 flex-col overflow-hidden bg-[var(--background)]">
+            <TabBar />
+
+            <div className="relative flex-1 overflow-hidden">
+              {tabs.length === 0 ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="text-center text-[var(--text-muted)]">
+                    <Terminal size={44} className="mx-auto mb-3 opacity-30" />
+                    <p className="text-sm font-medium">No open terminal</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">
+                      Select a host from the sidebar to connect via SSH
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                tabs.map((tab) => (
+                  <XtermView
+                    key={tab.id}
+                    sessionId={tab.id}
+                    hostId={tab.hostId}
+                    visible={tab.id === activeTabId}
+                  />
+                ))
+              )}
+            </div>
+          </main>
+        </>
+      )}
     </div>
   );
 }

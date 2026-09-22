@@ -1,9 +1,11 @@
 use crate::db::models::{Folder, Host, HostInput, Credential};
 use crate::db::Database;
+use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
 use crate::vault::VaultManager;
 use chrono::Utc;
 use serde::Serialize;
+use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
@@ -12,6 +14,7 @@ pub struct AppState {
     pub db: Arc<Database>,
     pub vault: Arc<VaultManager>,
     pub ssh: Arc<SessionManager>,
+    pub sftp: Arc<SftpManager>,
 }
 
 #[derive(Serialize)]
@@ -42,13 +45,11 @@ pub fn vault_setup(state: State<AppState>, password: String) -> Result<(), Strin
     let salt = VaultManager::generate_salt();
     let key = VaultManager::derive_key(&password, &salt)?;
 
-    // Store salt
     state
         .db
         .set_vault_meta("salt", &salt)
         .map_err(|e| e.to_string())?;
 
-    // Store verification token (encrypted with derived key)
     state.vault.set_key(key);
     let (ciphertext, nonce) = state.vault.encrypt(VaultManager::verification_payload())?;
     state
@@ -113,7 +114,6 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
 
     let mut credential_id = None;
 
-    // Encrypt secret if supplied
     if let Some(secret) = input.secret {
         if !secret.trim().is_empty() {
             if !state.vault.is_unlocked() {
@@ -189,6 +189,48 @@ pub fn folder_delete(state: State<AppState>, id: String) -> Result<(), String> {
     state.db.delete_folder(&id).map_err(|e| e.to_string())
 }
 
+fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
+    match host.auth_method.as_str() {
+        "password" => {
+            let secret = if let Some(cred_id) = &host.credential_id {
+                let cred = state
+                    .db
+                    .get_credential(cred_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "Credential record not found".to_string())?;
+                let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+                String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 password: {e}"))?
+            } else {
+                return Err("No password configured for this host".to_string());
+            };
+            Ok(SshAuth::Password(secret))
+        }
+        "private_key" => {
+            let (pem, passphrase) = if let Some(cred_id) = &host.credential_id {
+                let cred = state
+                    .db
+                    .get_credential(cred_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| "Credential record not found".to_string())?;
+                let pem_bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+                let pem_str = String::from_utf8(pem_bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
+                let pp = match (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
+                    (Some(ct), Some(n)) => {
+                        let bytes = state.vault.decrypt(ct, n)?;
+                        Some(String::from_utf8(bytes).map_err(|e| format!("Invalid passphrase: {e}"))?)
+                    }
+                    _ => None,
+                };
+                (pem_str, pp)
+            } else {
+                return Err("No private key configured for this host".to_string());
+            };
+            Ok(SshAuth::PrivateKey { pem, passphrase })
+        }
+        _ => Err(format!("Unsupported auth method: {}", host.auth_method)),
+    }
+}
+
 #[tauri::command]
 pub async fn ssh_connect(
     app: AppHandle,
@@ -204,45 +246,7 @@ pub async fn ssh_connect(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Host not found".to_string())?;
 
-    let auth = match host.auth_method.as_str() {
-        "password" => {
-            let secret = if let Some(cred_id) = host.credential_id {
-                let cred = state
-                    .db
-                    .get_credential(&cred_id)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "Credential record not found".to_string())?;
-                let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
-                String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 password: {e}"))?
-            } else {
-                return Err("No password configured for this host".to_string());
-            };
-            SshAuth::Password(secret)
-        }
-        "private_key" => {
-            let (pem, passphrase) = if let Some(cred_id) = host.credential_id {
-                let cred = state
-                    .db
-                    .get_credential(&cred_id)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| "Credential record not found".to_string())?;
-                let pem_bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
-                let pem_str = String::from_utf8(pem_bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
-                let pp = match (cred.passphrase_ciphertext, cred.passphrase_nonce) {
-                    (Some(ct), Some(n)) => {
-                        let bytes = state.vault.decrypt(&ct, &n)?;
-                        Some(String::from_utf8(bytes).map_err(|e| format!("Invalid passphrase: {e}"))?)
-                    }
-                    _ => None,
-                };
-                (pem_str, pp)
-            } else {
-                return Err("No private key configured for this host".to_string());
-            };
-            SshAuth::PrivateKey { pem, passphrase }
-        }
-        _ => return Err(format!("Unsupported auth method: {}", host.auth_method)),
-    };
+    let auth = resolve_host_auth(&state, &host)?;
 
     state
         .ssh
@@ -284,4 +288,128 @@ pub async fn ssh_disconnect(
     session_id: String,
 ) -> Result<(), String> {
     state.ssh.disconnect(&session_id).await
+}
+
+// ================= SFTP COMMANDS =================
+
+#[tauri::command]
+pub async fn sftp_connect(
+    state: State<'_, AppState>,
+    host_id: String,
+    session_id: String,
+) -> Result<String, String> {
+    let host = state
+        .db
+        .get_host(&host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Host not found".to_string())?;
+
+    let auth = resolve_host_auth(&state, &host)?;
+
+    state
+        .sftp
+        .connect(
+            session_id,
+            host_id,
+            host.address,
+            host.port,
+            host.username,
+            auth,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn sftp_list(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
+    state.sftp.list(&session_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<(), String> {
+    state.sftp.mkdir(&session_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_delete(
+    state: State<'_, AppState>,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> Result<(), String> {
+    state.sftp.delete(&session_id, &path, is_dir).await
+}
+
+#[tauri::command]
+pub async fn sftp_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    old_path: String,
+    new_path: String,
+) -> Result<(), String> {
+    state.sftp.rename(&session_id, &old_path, &new_path).await
+}
+
+#[tauri::command]
+pub async fn sftp_upload(
+    state: State<'_, AppState>,
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+) -> Result<(), String> {
+    state.sftp.upload_file(&session_id, &local_path, &remote_path).await
+}
+
+#[tauri::command]
+pub async fn sftp_download(
+    state: State<'_, AppState>,
+    session_id: String,
+    remote_path: String,
+    local_path: String,
+) -> Result<(), String> {
+    state.sftp.download_file(&session_id, &remote_path, &local_path).await
+}
+
+#[tauri::command]
+pub async fn sftp_disconnect(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.sftp.disconnect(&session_id).await
+}
+
+// Local filesystem helpers
+#[tauri::command]
+pub fn local_home_dir() -> String {
+    sftp::get_user_home()
+}
+
+#[tauri::command]
+pub fn local_list(path: Option<String>) -> Result<Vec<FileEntry>, String> {
+    let p = match path {
+        Some(s) if !s.trim().is_empty() => Path::new(&s).to_path_buf(),
+        _ => Path::new(&sftp::get_user_home()).to_path_buf(),
+    };
+    sftp::list_local_directory(&p)
+}
+
+#[tauri::command]
+pub fn local_mkdir(path: String) -> Result<(), String> {
+    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create local directory: {e}"))
+}
+
+#[tauri::command]
+pub fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
+    if is_dir {
+        std::fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete local folder: {e}"))
+    } else {
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete local file: {e}"))
+    }
 }
