@@ -12,9 +12,9 @@ import { XtermView } from "./components/terminal/XtermView";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
-import { VaultOverview } from "./components/vault/VaultOverview";
 import { KeychainView } from "./components/keychain/KeychainView";
 import { ConfirmModal } from "./components/layout/ConfirmModal";
+import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
 
 // Below this window width, the sidebar auto-collapses to give the main
@@ -145,7 +145,7 @@ function App() {
 
           {activeNav === "snippets" && <SnippetView />}
 
-          {activeNav === "vault" && <VaultOverview />}
+          {activeNav === "settings" && <SettingsView />}
         </main>
       </div>
 

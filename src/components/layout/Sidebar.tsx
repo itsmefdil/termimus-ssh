@@ -16,7 +16,7 @@ import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 
-export type ActiveTab = "hosts" | "terminal" | "sftp" | "keychain" | "tunnels" | "snippets" | "vault";
+export type ActiveTab = "hosts" | "terminal" | "sftp" | "keychain" | "tunnels" | "snippets" | "settings";
 
 interface SidebarProps {
   activeNav: ActiveTab;
@@ -50,7 +50,6 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
     { icon: FolderOpen, label: "SFTP Browser", id: "sftp" },
     { icon: Braces, label: "Snippets & Scripts", id: "snippets", badge: snippets.length || undefined },
     { icon: Waypoints, label: "Port Forwarding", id: "tunnels", badgeDot: activeRuleIds.size > 0 },
-    { icon: Lock, label: "Security & Backup", id: "vault" },
   ];
 
   return (
@@ -120,23 +119,32 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
         })}
 
         {/* Bottom Actions: Settings */}
-        <div className="w-full mt-auto flex flex-col gap-1 pt-2">
+        <div className="w-full mt-auto flex flex-col gap-1 pt-2 border-t border-[var(--border)]/50">
           <button
-            title={isCollapsed ? "Settings & Sync" : undefined}
-            className={`group flex items-center rounded-lg py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] ${
+            onClick={() => onNavChange("settings")}
+            title={isCollapsed ? "Settings" : undefined}
+            className={`group flex items-center rounded-lg py-2 text-left transition-colors ${
               isCollapsed ? "justify-center px-0" : "justify-start gap-2.5 px-2.5"
+            } ${
+              activeNav === "settings"
+                ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-md shadow-[var(--primary)]/10"
+                : "text-[var(--text-secondary)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
             }`}
           >
             <Settings
               size={16}
-              className="shrink-0 text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+              className={`shrink-0 ${
+                activeNav === "settings"
+                  ? "text-[var(--primary)]"
+                  : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+              }`}
             />
             <span
               className={`overflow-hidden whitespace-nowrap text-[13px] transition-[width,opacity] ${TRANSITION} ${
                 isCollapsed ? "w-0 opacity-0" : "w-[130px] opacity-100"
               }`}
             >
-              Settings & Sync
+              Settings
             </span>
           </button>
         </div>

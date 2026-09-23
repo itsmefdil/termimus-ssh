@@ -250,5 +250,22 @@ pub struct ImportSummary {
     pub port_forwards: usize,
     pub snippets: usize,
     pub known_hosts: usize,
+    pub known_hosts_conflicts: usize,
     pub vault_meta_restored: bool,
+    pub safety_snapshot_path: Option<String>,
+}
+
+/// An encrypted outer wrapper for a `BackupBundle`. When exported with a passphrase,
+/// the entire JSON bundle (including host IPs, snippets, and usernames) is encrypted
+/// with AES-256-GCM + Argon2id KDF.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptedBackupEnvelope {
+    pub format_version: u32,
+    pub encrypted: bool,
+    pub app_version: String,
+    pub exported_at: String,
+    pub kdf: String,
+    pub salt: Vec<u8>,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
 }

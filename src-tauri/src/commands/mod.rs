@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, ImportSummary};
+use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -987,11 +987,39 @@ pub fn known_host_delete(
 
 // ================= BACKUP & RESTORE COMMANDS =================
 
+/// Export a backup bundle. When `passphrase` is provided the entire bundle
+/// (hosts, snippets, tunnels, folders, encrypted credentials) is wrapped in
+/// an outer AES-256-GCM envelope so even the server addresses are at rest —
+/// the returned string is then an `EncryptedBackupEnvelope` JSON rather than
+/// a plain `BackupBundle`.
 #[tauri::command]
-pub fn backup_export(state: State<AppState>) -> Result<String, String> {
+pub fn backup_export(state: State<AppState>, passphrase: Option<String>) -> Result<String, String> {
     let bundle = state.db.export_backup_bundle("0.1.0").map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&bundle)
-        .map_err(|e| format!("Failed to serialize backup bundle: {e}"))
+    let bundle_json = serde_json::to_string_pretty(&bundle)
+        .map_err(|e| format!("Failed to serialize backup bundle: {e}"))?;
+
+    match passphrase {
+        Some(ref pw) if !pw.trim().is_empty() => {
+            let (ciphertext, salt, nonce) =
+                VaultManager::encrypt_with_passphrase(bundle_json.as_bytes(), pw.trim())
+                    .map_err(|e| format!("Backup encryption failed: {e}"))?;
+
+            let envelope = EncryptedBackupEnvelope {
+                format_version: 2,
+                encrypted: true,
+                app_version: bundle.app_version,
+                exported_at: bundle.exported_at,
+                kdf: "argon2id".to_string(),
+                salt,
+                nonce,
+                ciphertext,
+            };
+
+            serde_json::to_string_pretty(&envelope)
+                .map_err(|e| format!("Failed to serialize encrypted envelope: {e}"))
+        }
+        _ => Ok(bundle_json),
+    }
 }
 
 #[tauri::command]
@@ -999,13 +1027,70 @@ pub fn backup_import(
     state: State<AppState>,
     backup_json: String,
     replace_all: bool,
+    passphrase: Option<String>,
 ) -> Result<ImportSummary, String> {
-    let bundle: BackupBundle = serde_json::from_str(&backup_json)
-        .map_err(|e| format!("Invalid backup file format: {e}"))?;
+    // First, probe whether this is an encrypted envelope or a plain bundle.
+    let probe: serde_json::Value = serde_json::from_str(&backup_json)
+        .map_err(|e| format!("Invalid backup file: {e}"))?;
 
-    if bundle.format_version != 1 {
-        return Err(format!("Unsupported backup format version: {}", bundle.format_version));
+    let bundle: BackupBundle = if probe.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false) {
+        // Format version 2: decrypt the outer envelope first.
+        let envelope: EncryptedBackupEnvelope = serde_json::from_value(probe)
+            .map_err(|e| format!("Invalid encrypted backup format: {e}"))?;
+
+        if envelope.format_version != 2 {
+            return Err(format!("Unsupported encrypted backup version: {}", envelope.format_version));
+        }
+
+        let pw = passphrase.as_deref().unwrap_or("").trim().to_string();
+        if pw.is_empty() {
+            return Err("This backup is encrypted. Please enter the backup passphrase to restore it.".to_string());
+        }
+
+        let plaintext = VaultManager::decrypt_with_passphrase(
+            &envelope.ciphertext,
+            &pw,
+            &envelope.salt,
+            &envelope.nonce,
+        ).map_err(|e| e.to_string())?;
+
+        serde_json::from_slice::<BackupBundle>(&plaintext)
+            .map_err(|e| format!("Decrypted backup is malformed: {e}"))?
+    } else {
+        // Format version 1: plain JSON bundle.
+        let b: BackupBundle = serde_json::from_value(probe)
+            .map_err(|e| format!("Invalid backup file format: {e}"))?;
+        if b.format_version != 1 {
+            return Err(format!("Unsupported backup format version: {}", b.format_version));
+        }
+        b
+    };
+
+    let (mut summary, safety_snapshot_json) = state
+        .db
+        .import_backup_bundle(&bundle, replace_all)
+        .map_err(|e| e.to_string())?;
+
+    // If vault metadata was replaced, the in-memory key is now stale — lock the vault
+    // so the user must re-authenticate with the restored master password.
+    if summary.vault_meta_restored && replace_all {
+        state.vault.lock();
     }
 
-    state.db.import_backup_bundle(&bundle, replace_all).map_err(|e| e.to_string())
+    // Write the safety snapshot to disk so the user can roll back if needed.
+    if let Some(snapshot_json) = safety_snapshot_json {
+        let mut snap_path = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("termimus");
+        let _ = std::fs::create_dir_all(&snap_path);
+        snap_path.push("auto-backup-pre-restore.json");
+        let path_str = snap_path.to_string_lossy().to_string();
+        if let Err(e) = std::fs::write(&snap_path, &snapshot_json) {
+            eprintln!("Warning: could not write safety snapshot to {path_str}: {e}");
+        } else {
+            summary.safety_snapshot_path = Some(path_str);
+        }
+    }
+
+    Ok(summary)
 }

@@ -634,7 +634,17 @@ impl Database {
     /// Restore a backup bundle. When `replace_all` is true, every table this
     /// bundle covers is wiped first so the import produces an exact copy;
     /// otherwise rows are merged/upserted by their existing primary keys.
-    pub fn import_backup_bundle(&self, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary> {
+    /// Returns (summary, safety_snapshot_json) — the snapshot is Some(_) only
+    /// when replace_all == true so the caller can persist it for rollback.
+    pub fn import_backup_bundle(&self, bundle: &BackupBundle, replace_all: bool) -> Result<(ImportSummary, Option<String>)> {
+        let safety_snapshot_json: Option<String> = if replace_all {
+            // Auto-snapshot current data as a safety net before wiping anything.
+            let snapshot = self.export_backup_bundle("0.1.0")?;
+            Some(serde_json::to_string_pretty(&snapshot).unwrap_or_default())
+        } else {
+            None
+        };
+
         {
             let conn = self.conn.lock().unwrap();
             if replace_all {
@@ -655,14 +665,22 @@ impl Database {
             &bundle.vault_verifier_ciphertext,
             &bundle.vault_verifier_nonce,
         ) {
-            // Only restore vault metadata if this vault has not been initialized yet,
-            // to avoid silently swapping the master password salt/verifier under the user.
-            if self.get_vault_meta("salt")?.is_none() {
+            if replace_all {
+                // replace_all: always restore vault metadata so credentials encrypted
+                // with the backup's master password are actually usable after import.
+                self.set_vault_meta("salt", salt)?;
+                self.set_vault_meta("verifier_ciphertext", ct)?;
+                self.set_vault_meta("verifier_nonce", nonce)?;
+                vault_meta_restored = true;
+            } else if self.get_vault_meta("salt")?.is_none() {
+                // Merge into an uninitialized vault: safe to adopt the backup's meta.
                 self.set_vault_meta("salt", salt)?;
                 self.set_vault_meta("verifier_ciphertext", ct)?;
                 self.set_vault_meta("verifier_nonce", nonce)?;
                 vault_meta_restored = true;
             }
+            // Merge into an already-initialized vault: keep existing vault_meta so
+            // credentials already in the vault remain readable.
         }
 
         for folder in &bundle.folders {
@@ -680,19 +698,51 @@ impl Database {
         for snippet in &bundle.snippets {
             self.save_snippet(snippet)?;
         }
+
+        // TOFU / MITM protection: during a merge, never overwrite an existing
+        // trusted fingerprint with a different one from the backup — that would
+        // silently defeat host-key verification for servers the user has already
+        // connected to. Only import new entries or entries whose fingerprint
+        // already matches what we trust.
+        let mut known_hosts_imported: usize = 0;
+        let mut known_hosts_conflicts: usize = 0;
         for kh in &bundle.known_hosts {
-            self.save_known_host(kh)?;
+            if replace_all {
+                // Table was wiped above; safe to insert verbatim.
+                self.save_known_host(kh)?;
+                known_hosts_imported += 1;
+            } else {
+                let existing = self.get_known_host(&kh.address, kh.port)?;
+                match existing {
+                    None => {
+                        self.save_known_host(kh)?;
+                        known_hosts_imported += 1;
+                    }
+                    Some(ref trusted) if trusted.fingerprint == kh.fingerprint => {
+                        // Same fingerprint — just refresh last_seen_at.
+                        self.save_known_host(kh)?;
+                        known_hosts_imported += 1;
+                    }
+                    Some(_) => {
+                        // Fingerprint mismatch: skip this entry to protect the user
+                        // from a tampered backup poisoning their TOFU trust store.
+                        known_hosts_conflicts += 1;
+                    }
+                }
+            }
         }
 
-        Ok(ImportSummary {
+        Ok((ImportSummary {
             folders: bundle.folders.len(),
             credentials: bundle.credentials.len(),
             hosts: bundle.hosts.len(),
             port_forwards: bundle.port_forwards.len(),
             snippets: bundle.snippets.len(),
-            known_hosts: bundle.known_hosts.len(),
+            known_hosts: known_hosts_imported,
+            known_hosts_conflicts,
             vault_meta_restored,
-        })
+            safety_snapshot_path: None, // filled in by the command layer after writing to disk
+        }, safety_snapshot_json))
     }
 }
 

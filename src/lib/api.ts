@@ -141,7 +141,9 @@ export interface ImportSummary {
   port_forwards: number;
   snippets: number;
   known_hosts: number;
+  known_hosts_conflicts: number;
   vault_meta_restored: boolean;
+  safety_snapshot_path: string | null;
 }
 
 export const api = {
@@ -262,7 +264,8 @@ export const api = {
     invoke<void>("known_host_delete", { address, port }),
 
   // Backup & Restore
-  exportBackup: () => invoke<string>("backup_export"),
-  importBackup: (backupJson: string, replaceAll: boolean) =>
-    invoke<ImportSummary>("backup_import", { backupJson, replaceAll }),
+  exportBackup: (passphrase?: string) =>
+    invoke<string>("backup_export", { passphrase: passphrase ?? null }),
+  importBackup: (backupJson: string, replaceAll: boolean, passphrase?: string) =>
+    invoke<ImportSummary>("backup_import", { backupJson, replaceAll, passphrase: passphrase ?? null }),
 };

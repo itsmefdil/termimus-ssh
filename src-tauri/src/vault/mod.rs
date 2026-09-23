@@ -5,6 +5,7 @@ use aes_gcm::{
 use argon2::{password_hash::rand_core::RngCore, Argon2};
 use rand::rngs::OsRng;
 use std::sync::RwLock;
+use zeroize::Zeroize;
 
 const VERIFY_STRING: &[u8] = b"TERMIMUS_VAULT_OK";
 
@@ -25,7 +26,62 @@ impl VaultManager {
 
     pub fn lock(&self) {
         let mut key_guard = self.derived_key.write().unwrap();
+        // Zero out the derived key bytes in memory before dropping them
+        if let Some(ref mut key) = *key_guard {
+            key.zeroize();
+        }
         *key_guard = None;
+    }
+
+    /// Encrypt a backup bundle using a separate passphrase (independent from the vault key).
+    /// Returns (ciphertext, salt, nonce) all as raw bytes.
+    pub fn encrypt_with_passphrase(
+        plaintext: &[u8],
+        passphrase: &str,
+    ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), String> {
+        let salt = VaultManager::generate_salt();
+        let key = VaultManager::derive_key(passphrase, &salt)?;
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| format!("Cipher init failed: {e}"))?;
+
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, plaintext)
+            .map_err(|e| format!("Encryption error: {e}"))?;
+
+        Ok((ciphertext, salt.to_vec(), nonce_bytes.to_vec()))
+    }
+
+    /// Decrypt a backup bundle that was encrypted with `encrypt_with_passphrase`.
+    pub fn decrypt_with_passphrase(
+        ciphertext: &[u8],
+        passphrase: &str,
+        salt: &[u8],
+        nonce_bytes: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        let mut key = [0u8; 32];
+        let argon2 = Argon2::default();
+        argon2
+            .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+            .map_err(|e| format!("Argon2 derivation error: {e}"))?;
+
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| format!("Cipher init failed: {e}"))?;
+
+        if nonce_bytes.len() != 12 {
+            return Err("Invalid nonce length".to_string());
+        }
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| "Decryption failed — wrong passphrase or corrupted backup".to_string())?;
+
+        Ok(plaintext)
     }
 
     /// Derive key from password using Argon2id and a 16-byte salt
