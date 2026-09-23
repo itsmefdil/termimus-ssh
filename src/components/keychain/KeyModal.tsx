@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
-import { X, Key, Upload, Sparkles, Copy, Check } from "lucide-react";
+import {
+  X,
+  Key,
+  Upload,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { api, KeychainKeyInput } from "../../lib/api";
@@ -10,9 +18,6 @@ export function KeyModal() {
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
-  const [keyType, setKeyType] = useState<"ed25519" | "rsa" | "ecdsa-p256">(
-    "ed25519"
-  );
   const [privateKeyPem, setPrivateKeyPem] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [publicKey, setPublicKey] = useState("");
@@ -20,6 +25,12 @@ export function KeyModal() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedPrivateKey, setCopiedPrivateKey] = useState(false);
+
+  // Private key & passphrase visibility states
+  const [showPrivateKey, setShowPrivateKey] = useState(false);
+  const [showPassphrase, setShowPassphrase] = useState(false);
+  const [loadingKey, setLoadingKey] = useState(false);
 
   useEffect(() => {
     if (editingKey) {
@@ -27,20 +38,37 @@ export function KeyModal() {
       setUsername(editingKey.username ?? "");
       setPublicKey(editingKey.public_key);
       setFingerprint(editingKey.fingerprint);
-      const kt = editingKey.key_type.toLowerCase();
-      if (kt.includes("rsa")) setKeyType("rsa");
-      else if (kt.includes("ecdsa")) setKeyType("ecdsa-p256");
-      else setKeyType("ed25519");
+
       setPrivateKeyPem("");
       setPassphrase("");
+      setShowPrivateKey(false);
+      setShowPassphrase(false);
+      setLoadingKey(true);
+
+      // Decrypt and load the private key and passphrase from the vault
+      api
+        .getKeychainPrivateKey(editingKey.id)
+        .then((details) => {
+          setPrivateKeyPem(details.private_key_pem);
+          if (details.passphrase) {
+            setPassphrase(details.passphrase);
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load private key from vault:", err);
+        })
+        .finally(() => {
+          setLoadingKey(false);
+        });
     } else {
       setName("");
       setUsername("");
-      setKeyType("ed25519");
       setPrivateKeyPem("");
       setPassphrase("");
       setPublicKey("");
       setFingerprint("");
+      setShowPrivateKey(true);
+      setShowPassphrase(false);
     }
     setError(null);
   }, [editingKey, isKeyModalOpen]);
@@ -77,32 +105,69 @@ export function KeyModal() {
     };
   }, [privateKeyPem, passphrase, editingKey]);
 
-  const isPublicKeyOnly =
-    privateKeyPem.trim().startsWith("ssh-") ||
-    privateKeyPem.trim().startsWith("ecdsa-") ||
-    privateKeyPem.trim().startsWith("sk-");
-
   if (!isKeyModalOpen) return null;
 
   async function handleImportKeyFile() {
     setError(null);
     try {
+      let defaultPath: string | undefined;
+      try {
+        const home = await api.getLocalHomeDir();
+        if (home) {
+          defaultPath = `${home}/.ssh`;
+        }
+      } catch {
+        // ignore fallback
+      }
+
+      // Tauri's file filter only matches on the part after a dot, but common
+      // SSH key filenames (id_rsa, id_ed25519, ...) have no extension at all —
+      // filtering on those names would hide every real key file from the
+      // explorer. So the picker stays unfiltered and the content checks below
+      // enforce that only a valid private key is accepted.
       const selected = await open({
         multiple: false,
         directory: false,
         title: "Select SSH Private Key",
-        filters: [
-          {
-            name: "SSH Private Key",
-            extensions: ["pem", "key", "id_rsa", "id_ed25519", "id_ecdsa", "*"],
-          },
-        ],
+        defaultPath,
       });
 
       if (!selected || typeof selected !== "string") return;
 
+      if (selected.endsWith(".pub")) {
+        setError(
+          "The selected file is a Public Key (.pub). Please choose your Private Key (e.g. id_rsa or id_ed25519 without the .pub extension)."
+        );
+        return;
+      }
+
       const content = await api.readLocalFile(selected);
+      const trimmed = content.trim();
+
+      if (
+        trimmed.startsWith("ssh-") ||
+        trimmed.startsWith("ecdsa-") ||
+        trimmed.startsWith("sk-") ||
+        trimmed.includes("PUBLIC KEY")
+      ) {
+        setError(
+          "The selected file is a Public Key. SSH authentication requires the Private Key (starts with '-----BEGIN ... PRIVATE KEY-----')."
+        );
+        return;
+      }
+
+      if (
+        !trimmed.includes("PRIVATE KEY") &&
+        !trimmed.includes("PuTTY-User-Key-File")
+      ) {
+        setError(
+          "The selected file doesn't look like a private key. Please choose a file that starts with '-----BEGIN ... PRIVATE KEY-----' (e.g. id_rsa or id_ed25519 without the .pub extension)."
+        );
+        return;
+      }
+
       setPrivateKeyPem(content);
+      setShowPrivateKey(true);
 
       // Auto-fill name from filename if empty
       if (!name.trim()) {
@@ -112,24 +177,6 @@ export function KeyModal() {
       }
     } catch (err) {
       setError(`Failed to read key file: ${err}`);
-    }
-  }
-
-  async function handleGenerateKeyPair() {
-    setError(null);
-    try {
-      const comment = username.trim()
-        ? `${username.trim()}@termimus`
-        : name.trim() || "termimus-key";
-      const res = await api.generateKeyPair(keyType, comment);
-      setPrivateKeyPem(res.private_key_pem);
-      setPublicKey(res.public_key_openssh);
-      setPassphrase("");
-      if (!name.trim()) {
-        setName(keyType === "ed25519" ? "id_ed25519" : "id_rsa");
-      }
-    } catch (err) {
-      setError(`Key generation failed: ${err}`);
     }
   }
 
@@ -158,9 +205,21 @@ export function KeyModal() {
       return;
     }
 
+    if (
+      privateKeyPem.trim() &&
+      (privateKeyPem.trim().startsWith("ssh-") ||
+        privateKeyPem.trim().startsWith("ecdsa-") ||
+        privateKeyPem.trim().startsWith("sk-"))
+    ) {
+      setError(
+        "This looks like a Public Key (starts with ssh-rsa/ssh-ed25519). Please paste or import the matching Private Key instead — the one starting with '-----BEGIN ... PRIVATE KEY-----'."
+      );
+      return;
+    }
+
     const input: KeychainKeyInput = {
       name: name.trim(),
-      key_type: keyType.toUpperCase(),
+      key_type: "SSH",
       private_key_pem: privateKeyPem.trim(),
       public_key: publicKey.trim(),
       fingerprint: fingerprint.trim(),
@@ -183,12 +242,9 @@ export function KeyModal() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-lg rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
-          <div className="flex items-center gap-2">
-            <Key size={18} className="text-[var(--primary)]" />
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {editingKey ? "Edit SSH Key" : "New SSH Key"}
-            </h2>
-          </div>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">
+            {editingKey ? "Edit SSH Key" : "New SSH Key"}
+          </h2>
           <button
             onClick={closeKeyModal}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
@@ -234,84 +290,128 @@ export function KeyModal() {
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <label className="font-medium text-[var(--text-muted)]">
-                Private Key (OpenSSH/RSA PEM) or Public Key{" "}
-                {editingKey && "(leave blank to keep unchanged)"}
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="font-medium text-[var(--text-muted)]">
+                  Private Key (OpenSSH/RSA PEM)
+                </label>
+                {editingKey && privateKeyPem && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPrivateKey(!showPrivateKey)}
+                    className="flex items-center gap-1 rounded bg-[var(--surface-high)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] border border-[var(--border)] transition-colors"
+                    title={showPrivateKey ? "Hide private key" : "Reveal private key"}
+                  >
+                    {showPrivateKey ? <EyeOff size={11} /> : <Eye size={11} />}
+                    <span>{showPrivateKey ? "Hide" : "Reveal"}</span>
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-1.5">
+                {privateKeyPem && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(privateKeyPem);
+                      setCopiedPrivateKey(true);
+                      setTimeout(() => setCopiedPrivateKey(false), 2000);
+                    }}
+                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition ${
+                      copiedPrivateKey
+                        ? "bg-[var(--success)] text-black font-semibold"
+                        : "bg-[var(--surface-high)] text-[var(--text-primary)] hover:bg-[var(--surface-highest)] border border-[var(--border)]"
+                    }`}
+                    title="Copy private key"
+                  >
+                    {copiedPrivateKey ? <Check size={11} /> : <Copy size={11} />}
+                    <span>{copiedPrivateKey ? "Copied" : "Copy"}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleImportKeyFile}
-                  className="flex items-center gap-1 rounded bg-[var(--surface-high)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] border border-[var(--border)] transition"
-                  title="Import key from local file"
+                  className="flex items-center gap-1 rounded bg-[var(--surface-high)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] border border-[var(--border)] transition"
+                  title="Import private key from local file"
                 >
                   <Upload size={11} /> Import File
-                </button>
-                <button
-                  type="button"
-                  onClick={handleGenerateKeyPair}
-                  className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[11px] font-semibold text-[var(--primary)] hover:bg-[var(--primary)]/25 border border-[var(--primary)]/30 transition"
-                  title="Generate a new key pair"
-                >
-                  <Sparkles size={11} /> Generate Key
                 </button>
               </div>
             </div>
 
-            {/* Algorithm selector */}
-            <div className="mb-2 flex items-center gap-2 rounded-md bg-[var(--surface-low)] p-1.5 border border-[var(--border)] text-[11px]">
-              <span className="text-[var(--text-muted)]">Algorithm:</span>
-              <select
-                value={keyType}
-                onChange={(e) =>
-                  setKeyType(e.target.value as "ed25519" | "rsa" | "ecdsa-p256")
-                }
-                className="rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-primary)] border border-[var(--border)] focus:outline-none"
-              >
-                <option value="ed25519">Ed25519 (Recommended, fast & secure)</option>
-                <option value="rsa">RSA 4096-bit (Broad compatibility)</option>
-                <option value="ecdsa-p256">ECDSA NIST-P256</option>
-              </select>
-            </div>
-
             <textarea
-              rows={4}
+              rows={5}
               value={privateKeyPem}
-              onChange={(e) => setPrivateKeyPem(e.target.value)}
+              onChange={(e) => {
+                setPrivateKeyPem(e.target.value);
+                setShowPrivateKey(true);
+              }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={async (e) => {
                 e.preventDefault();
                 const file = e.dataTransfer.files?.[0];
                 if (file) {
+                  if (file.name.endsWith(".pub")) {
+                    setError(
+                      "The dropped file is a Public Key (.pub). Please drop your Private Key."
+                    );
+                    return;
+                  }
                   const text = await file.text();
+                  const trimmed = text.trim();
+                  if (
+                    trimmed.startsWith("ssh-") ||
+                    trimmed.startsWith("ecdsa-") ||
+                    trimmed.startsWith("sk-") ||
+                    trimmed.includes("PUBLIC KEY")
+                  ) {
+                    setError(
+                      "The dropped file is an SSH Public Key. SSH authentication requires the Private Key."
+                    );
+                    return;
+                  }
                   setPrivateKeyPem(text);
+                  setShowPrivateKey(true);
+                  if (!name.trim()) {
+                    setName(file.name);
+                  }
                 }
               }}
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY----- or ssh-rsa / ssh-ed25519 AAAAC3... (paste private key or public key)"
-              className="w-full font-mono rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
+              placeholder={
+                loadingKey
+                  ? "Decrypting and loading private key from vault..."
+                  : "-----BEGIN OPENSSH PRIVATE KEY----- ... (paste private key or click 'Import File')"
+              }
+              className={`w-full font-mono rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none transition-all ${
+                editingKey && !showPrivateKey && privateKeyPem
+                  ? "filter blur-xs select-none"
+                  : ""
+              }`}
             />
-
-            {isPublicKeyOnly && (
-              <div className="mt-2 rounded-md border border-[var(--secondary)]/30 bg-[var(--secondary)]/10 p-2 text-[11px] text-[var(--secondary)]">
-                <strong>Public Key detected:</strong> This key will be saved to Keychain as a public key for reference and copying. (Note: logging in directly to servers requires the private key).
-              </div>
-            )}
           </div>
 
-          {!isPublicKeyOnly && (
-            <div>
-              <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                Passphrase (if key is encrypted)
-              </label>
+          <div>
+            <label className="mb-1 block font-medium text-[var(--text-muted)]">
+              Passphrase (if key is encrypted)
+            </label>
+            <div className="relative">
               <input
-                type="password"
+                type={showPassphrase ? "text" : "password"}
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
                 placeholder="Key passphrase..."
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 pr-9 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
               />
+              {passphrase && (
+                <button
+                  type="button"
+                  onClick={() => setShowPassphrase(!showPassphrase)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                  title={showPassphrase ? "Hide passphrase" : "Show passphrase"}
+                >
+                  {showPassphrase ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Public Key Display / Copy Box */}
           {publicKey && (

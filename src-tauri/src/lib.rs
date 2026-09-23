@@ -50,6 +50,7 @@ pub fn run() {
             commands::keychain_save_identity,
             commands::keychain_delete,
             commands::keychain_get_public_key,
+            commands::keychain_get_private_key,
             commands::host_get_password,
             commands::credential_get_secret,
             commands::sftp_connect,

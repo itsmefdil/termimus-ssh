@@ -413,26 +413,58 @@ pub fn keychain_save_key(
         return Err("Key name is required".to_string());
     }
 
-    let details = crate::sshkey::inspect_key(&input.private_key_pem, input.passphrase.as_deref())?;
-
-    let kind = if details.is_public_key_only {
-        "public_key".to_string()
+    let existing = if let Some(ref id) = item_id {
+        state.db.get_credential(id).map_err(|e| e.to_string())?
     } else {
-        "private_key".to_string()
+        None
     };
 
-    let (ciphertext, nonce) = state.vault.encrypt(input.private_key_pem.as_bytes())?;
-    let (passphrase_ciphertext, passphrase_nonce) = match &input.passphrase {
-        Some(p) if !p.trim().is_empty() => {
-            let (ct, n) = state.vault.encrypt(p.as_bytes())?;
-            (Some(ct), Some(n))
-        }
-        _ => (None, None),
-    };
+    let (kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, key_type, public_key, fingerprint) =
+        if input.private_key_pem.trim().is_empty() {
+            if let Some(ref c) = existing {
+                (
+                    c.kind.clone(),
+                    c.ciphertext.clone(),
+                    c.nonce.clone(),
+                    c.passphrase_ciphertext.clone(),
+                    c.passphrase_nonce.clone(),
+                    c.key_type.clone(),
+                    c.public_key.clone(),
+                    c.fingerprint.clone(),
+                )
+            } else {
+                return Err("Private key is required".to_string());
+            }
+        } else {
+            let details = crate::sshkey::inspect_key(&input.private_key_pem, input.passphrase.as_deref())?;
+            let kind = if details.is_public_key_only {
+                "public_key".to_string()
+            } else {
+                "private_key".to_string()
+            };
+
+            let (ciphertext, nonce) = state.vault.encrypt(input.private_key_pem.as_bytes())?;
+            let (passphrase_ciphertext, passphrase_nonce) = match &input.passphrase {
+                Some(p) if !p.trim().is_empty() => {
+                    let (ct, n) = state.vault.encrypt(p.as_bytes())?;
+                    (Some(ct), Some(n))
+                }
+                _ => (None, None),
+            };
+            (
+                kind,
+                ciphertext,
+                nonce,
+                passphrase_ciphertext,
+                passphrase_nonce,
+                details.algorithm,
+                details.public_key,
+                details.fingerprint,
+            )
+        };
 
     let now = Utc::now().to_rfc3339();
     let id = item_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-    let existing = state.db.get_credential(&id).map_err(|e| e.to_string())?;
     let created_at = existing.map(|c| c.created_at).unwrap_or_else(|| now.clone());
 
     let cred = Credential {
@@ -443,9 +475,9 @@ pub fn keychain_save_key(
         passphrase_ciphertext,
         passphrase_nonce,
         name: input.name.trim().to_string(),
-        key_type: details.algorithm,
-        public_key: details.public_key,
-        fingerprint: details.fingerprint,
+        key_type,
+        public_key,
+        fingerprint,
         username: input.username.filter(|u| !u.trim().is_empty()),
         created_at,
         updated_at: now,
@@ -515,6 +547,41 @@ pub fn keychain_get_public_key(state: State<AppState>, id: String) -> Result<Str
         return Err("This Keychain item has no public key".to_string());
     }
     Ok(cred.public_key)
+}
+
+#[derive(serde::Serialize)]
+pub struct DecryptedKeyDetails {
+    pub private_key_pem: String,
+    pub passphrase: Option<String>,
+}
+
+/// Returns the decrypted private key and passphrase for a stored Keychain SSH key.
+#[tauri::command]
+pub fn keychain_get_private_key(state: State<AppState>, id: String) -> Result<DecryptedKeyDetails, String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault must be unlocked to view key".to_string());
+    }
+    let cred = state
+        .db
+        .get_credential(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Keychain item not found".to_string())?;
+
+    let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+    let private_key_pem = String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
+
+    let passphrase = match (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
+        (Some(ct), Some(n)) => {
+            let pb = state.vault.decrypt(ct, n)?;
+            Some(String::from_utf8(pb).map_err(|e| format!("Invalid utf-8 passphrase: {e}"))?)
+        }
+        _ => None,
+    };
+
+    Ok(DecryptedKeyDetails {
+        private_key_pem,
+        passphrase,
+    })
 }
 
 /// Returns the decrypted password for a host (used to populate the host edit form).

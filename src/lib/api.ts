@@ -197,6 +197,11 @@ export const api = {
     invoke<string>("keychain_get_public_key", { id }),
   getCredentialSecret: (id: string) =>
     invoke<string>("credential_get_secret", { id }),
+  getKeychainPrivateKey: (id: string) =>
+    invoke<{ private_key_pem: string; passphrase?: string | null }>(
+      "keychain_get_private_key",
+      { id }
+    ),
 
   // SFTP Remote
   connectSftp: (hostId: string, sessionId: string) =>
