@@ -5,6 +5,7 @@ use crate::ssh::{SessionManager, SshAuth};
 use crate::tunnel::TunnelManager;
 use crate::vault::VaultManager;
 use chrono::Utc;
+use keyring::Entry as KeyringEntry;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -101,6 +102,199 @@ pub fn vault_unlock(state: State<AppState>, password: String) -> Result<bool, St
 #[tauri::command]
 pub fn vault_lock(state: State<AppState>) -> Result<(), String> {
     state.vault.lock();
+    Ok(())
+}
+
+// ── OS Keyring helpers ──────────────────────────────────────────────────────
+// Service + username identifiers used for every keyring entry.
+const KEYRING_SERVICE: &str = "termimus";
+const KEYRING_USER: &str = "vault-derived-key";
+
+/// Persist the current in-memory derived key into the OS keyring (KWallet /
+/// macOS Keychain / Windows Credential Manager). The key is hex-encoded so it
+/// survives any keyring backend that only stores UTF-8 strings.
+/// The vault MUST be unlocked before calling this.
+#[tauri::command]
+pub fn vault_keyring_save(state: State<AppState>) -> Result<(), String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault is locked — unlock it first before enabling OS Keyring.".to_string());
+    }
+    let hex_key = state.vault.export_key_hex()?;
+    let entry = KeyringEntry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| format!("Keyring init failed: {e}"))?;
+    entry
+        .set_password(&hex_key)
+        .map_err(|e| format!("Failed to save key to OS keyring: {e}"))?;
+    Ok(())
+}
+
+/// Try to load the derived key from the OS keyring and unlock the vault
+/// silently. Returns `true` if successful, `false` if the keyring has no
+/// stored key (e.g. first run or keyring cleared). Hard errors (keyring
+/// daemon unavailable) are surfaced as `Err`.
+#[tauri::command]
+pub fn vault_keyring_unlock(state: State<AppState>) -> Result<bool, String> {
+    let entry = KeyringEntry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| format!("Keyring init failed: {e}"))?;
+
+    let hex_key = match entry.get_password() {
+        Ok(k) => k,
+        Err(keyring::Error::NoEntry) => return Ok(false),
+        Err(e) => return Err(format!("Keyring read failed: {e}")),
+    };
+
+    // Decode hex → 32-byte key
+    if hex_key.len() != 64 {
+        return Err("Keyring entry is corrupted (unexpected length).".to_string());
+    }
+    let mut key_bytes = [0u8; 32];
+    for (i, chunk) in hex_key.as_bytes().chunks(2).enumerate() {
+        let byte_str = std::str::from_utf8(chunk).map_err(|_| "Invalid hex in keyring".to_string())?;
+        key_bytes[i] = u8::from_str_radix(byte_str, 16)
+            .map_err(|_| "Invalid hex in keyring".to_string())?;
+    }
+
+    // Verify the key is correct against the stored verifier before trusting it.
+    state.vault.set_key(key_bytes);
+    let verifier_ct = state
+        .db
+        .get_vault_meta("verifier_ciphertext")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Corrupted vault state: verifier missing".to_string())?;
+    let verifier_nonce = state
+        .db
+        .get_vault_meta("verifier_nonce")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Corrupted vault state: nonce missing".to_string())?;
+
+    match state.vault.decrypt(&verifier_ct, &verifier_nonce) {
+        Ok(decrypted) if decrypted == VaultManager::verification_payload() => Ok(true),
+        _ => {
+            // Key is stale (e.g. master password was changed elsewhere) — clear it.
+            state.vault.lock();
+            let _ = entry.delete_credential();
+            Ok(false)
+        }
+    }
+}
+
+/// Remove the stored key from the OS keyring (when user disables the feature
+/// or changes master password).
+#[tauri::command]
+pub fn vault_keyring_clear() -> Result<(), String> {
+    let entry = KeyringEntry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| format!("Keyring init failed: {e}"))?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("Failed to clear keyring entry: {e}")),
+    }
+}
+
+/// Change the master password: verifies the old password, re-derives a new
+/// key, re-encrypts every credential, updates the verifier, and clears any
+/// stale keyring entry so the user must re-enable OS Keyring with the new key.
+#[tauri::command]
+pub fn vault_change_password(
+    state: State<AppState>,
+    old_password: String,
+    new_password: String,
+) -> Result<(), String> {
+    if new_password.len() < 4 {
+        return Err("New password must be at least 4 characters.".to_string());
+    }
+
+    // 1. Verify old password against stored verifier.
+    let salt = state
+        .db
+        .get_vault_meta("salt")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Vault not initialized".to_string())?;
+    let old_key = VaultManager::derive_key(&old_password, &salt)?;
+
+    // Temporarily set old key to verify.
+    state.vault.set_key(old_key);
+    let verifier_ct = state
+        .db
+        .get_vault_meta("verifier_ciphertext")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Corrupted vault state".to_string())?;
+    let verifier_nonce = state
+        .db
+        .get_vault_meta("verifier_nonce")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Corrupted vault state".to_string())?;
+
+    match state.vault.decrypt(&verifier_ct, &verifier_nonce) {
+        Ok(decrypted) if decrypted == VaultManager::verification_payload() => {}
+        _ => {
+            state.vault.lock();
+            return Err("Current password is incorrect.".to_string());
+        }
+    }
+
+    // 2. Derive new key with a fresh salt.
+    let new_salt = VaultManager::generate_salt();
+    let new_key = VaultManager::derive_key(&new_password, &new_salt)?;
+
+    // 3. Re-encrypt every credential with the new key.
+    let credentials = state.db.list_credentials().map_err(|e| e.to_string())?;
+    for mut cred in credentials {
+        // Decrypt with old key (already set on vault).
+        let plaintext = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+        // Temporarily set new key to encrypt.
+        state.vault.set_key(new_key);
+        let (new_ct, new_nonce) = state.vault.encrypt(&plaintext)?;
+        cred.ciphertext = new_ct;
+        cred.nonce = new_nonce;
+
+        // Re-encrypt passphrase if present.
+        if let (Some(pp_ct), Some(pp_nonce)) = (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
+            // Decrypt passphrase with old key.
+            state.vault.set_key(old_key);
+            let pp_plain = state.vault.decrypt(pp_ct, pp_nonce)?;
+            state.vault.set_key(new_key);
+            let (new_pp_ct, new_pp_nonce) = state.vault.encrypt(&pp_plain)?;
+            cred.passphrase_ciphertext = Some(new_pp_ct);
+            cred.passphrase_nonce = Some(new_pp_nonce);
+        } else {
+            state.vault.set_key(new_key);
+        }
+
+        state.db.save_credential(&cred).map_err(|e| e.to_string())?;
+    }
+
+    // 4. Update salt + verifier in vault_meta.
+    state
+        .db
+        .set_vault_meta("salt", &new_salt)
+        .map_err(|e| e.to_string())?;
+    let (new_verifier_ct, new_verifier_nonce) =
+        state.vault.encrypt(VaultManager::verification_payload())?;
+    state
+        .db
+        .set_vault_meta("verifier_ciphertext", &new_verifier_ct)
+        .map_err(|e| e.to_string())?;
+    state
+        .db
+        .set_vault_meta("verifier_nonce", &new_verifier_nonce)
+        .map_err(|e| e.to_string())?;
+
+    // 5. Clear stale keyring entry so user must re-enable with new key.
+    let _ = vault_keyring_clear();
+
+    Ok(())
+}
+
+/// Hard-reset the vault: wipes all credentials and vault metadata so the user
+/// can set a new master password. This is a destructive operation — all SSH
+/// keys and passwords stored in the vault are permanently lost.
+#[tauri::command]
+pub fn vault_reset(state: State<AppState>) -> Result<(), String> {
+    state.vault.lock();
+    // Clear keyring entry.
+    let _ = vault_keyring_clear();
+    // Wipe all credential data and vault meta.
+    state.db.reset_vault().map_err(|e| e.to_string())?;
     Ok(())
 }
 

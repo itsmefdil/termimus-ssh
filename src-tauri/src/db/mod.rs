@@ -608,6 +608,17 @@ impl Database {
         Ok(())
     }
 
+    /// Hard-wipe all credentials and vault metadata (used for "Reset Vault").
+    pub fn reset_vault(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
+            "DELETE FROM credentials;
+             DELETE FROM vault_meta;
+             UPDATE hosts SET credential_id = NULL;",
+        )?;
+        Ok(())
+    }
+
     /// Build a full snapshot of every table for export. Credential fields stay
     /// as their AES-256-GCM ciphertext/nonce — nothing here is plaintext.
     pub fn export_backup_bundle(&self, app_version: &str) -> Result<BackupBundle> {

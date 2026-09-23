@@ -16,6 +16,7 @@ import { KeychainView } from "./components/keychain/KeychainView";
 import { ConfirmModal } from "./components/layout/ConfirmModal";
 import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
+import { useAutoLock } from "./hooks/useAutoLock";
 
 // Below this window width, the sidebar auto-collapses to give the main
 // content area enough room (independent of the user's manual toggle).
@@ -38,6 +39,9 @@ function App() {
   const { refresh: refreshHosts } = useHostStore();
   const { refresh: refreshKeychain } = useKeychainStore();
   const { tabs, activeTabId } = useSessionStore();
+
+  // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
+  useAutoLock();
 
   useEffect(() => {
     refreshVault();

@@ -1,121 +1,339 @@
-import { Archive, Lock, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Archive,
+  Lock,
+  ShieldCheck,
+  KeyRound,
+  Fingerprint,
+  Timer,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  X,
+  Server,
+  RotateCw,
+  Trash2,
+  ShieldAlert,
+  Info,
+  Shield,
+  Cpu,
+  Layers,
+} from "lucide-react";
 import { BackupRestoreSection } from "../vault/BackupRestoreSection";
 import { useVaultStore } from "../../stores/useVaultStore";
+import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
+import {
+  useSettingsStore,
+  AutoLockPolicy,
+  AUTO_LOCK_LABELS,
+} from "../../stores/useSettingsStore";
+import { api } from "../../lib/api";
 
-// ─── section wrapper ────────────────────────────────────────────────────────
-function Section({
-  icon: Icon,
-  title,
-  description,
-  children,
-}: {
-  icon: typeof Archive;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
+type SettingsTab = "security" | "known_hosts" | "backup" | "about";
+
+export function SettingsView() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("security");
+  const { knownHosts } = useKnownHostsStore();
+
+  const tabs: {
+    id: SettingsTab;
+    label: string;
+    icon: typeof Lock;
+    badge?: number;
+  }[] = [
+    { id: "security", label: "Security & Vault", icon: Lock },
+    {
+      id: "known_hosts",
+      label: "Trusted Host Keys",
+      icon: ShieldCheck,
+      badge: knownHosts.length || undefined,
+    },
+    { id: "backup", label: "Backup & Restore", icon: Archive },
+    { id: "about", label: "About & Architecture", icon: Info },
+  ];
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 pb-2 border-b border-[var(--border)]">
-        <Icon size={15} className="text-[var(--text-muted)]" />
-        <div>
-          <h3 className="text-xs font-semibold text-[var(--text-primary)]">{title}</h3>
-          {description && (
-            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{description}</p>
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5">
+      <div className="flex flex-col w-full space-y-5">
+
+        {/* ── Top Header ──────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Settings</h2>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Manage your local security vault, trusted hosts, backup bundles, and application preferences.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Navigation Tabs ─────────────────────────────────────────────── */}
+        <div className="flex items-center gap-1 border-b border-[var(--border)]">
+          {tabs.map(({ id, label, icon: Icon, badge }) => {
+            const active = activeTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium transition-all border-b-2 -mb-px rounded-t-lg ${
+                  active
+                    ? "border-[var(--primary)] text-[var(--primary)] bg-[var(--surface-container)]/40 font-semibold shadow-xs"
+                    : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/20"
+                }`}
+              >
+                <Icon
+                  size={15}
+                  className={active ? "text-[var(--primary)]" : "text-[var(--text-muted)]"}
+                />
+                <span>{label}</span>
+                {badge !== undefined && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                      active
+                        ? "bg-[var(--primary)]/20 text-[var(--primary)]"
+                        : "bg-[var(--surface-high)] text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Tab Content Panels ──────────────────────────────────────────── */}
+        <div className="pt-1">
+          {activeTab === "security" && <SecurityVaultTab />}
+          {activeTab === "known_hosts" && <KnownHostsTab />}
+          {activeTab === "backup" && <BackupRestoreSection />}
+          {activeTab === "about" && <AboutTab />}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB 1: SECURITY & VAULT
+// ══════════════════════════════════════════════════════════════════════════════
+
+function SecurityVaultTab() {
+  const { isUnlocked, isInitialized, lock: lockVault, refresh: refreshVault } = useVaultStore();
+  const { useOsKeyring, setUseOsKeyring, autoLockPolicy, setAutoLockPolicy } = useSettingsStore();
+
+  const [keyringLoading, setKeyringLoading] = useState(false);
+  const [keyringError, setKeyringError] = useState<string | null>(null);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+
+  async function handleToggleKeyring(enable: boolean) {
+    setKeyringError(null);
+    setKeyringLoading(true);
+    try {
+      if (enable) {
+        if (!isUnlocked) {
+          setKeyringError("Please unlock the vault first to save the key to OS Keyring.");
+          return;
+        }
+        await api.saveVaultKeyring();
+        setUseOsKeyring(true);
+      } else {
+        await api.clearVaultKeyring();
+        setUseOsKeyring(false);
+      }
+    } catch (e) {
+      setKeyringError(`Keyring error: ${String(e)}`);
+    } finally {
+      setKeyringLoading(false);
+    }
+  }
+
+  function handleResetVault() {
+    useConfirmStore.getState().confirm({
+      title: "Reset Entire Vault?",
+      message:
+        "WARNING: This will permanently delete all stored credentials, SSH private keys, and passwords. Your hosts and snippets will remain, but credentials will need to be re-entered. This cannot be undone.",
+      confirmLabel: "Reset Vault",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await api.resetVault();
+          setUseOsKeyring(false);
+          await refreshVault();
+        } catch (e) {
+          alert(`Failed to reset vault: ${e}`);
+        }
+      },
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* ── Vault State Card ──────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ${
+                isUnlocked
+                  ? "bg-[var(--primary)]/15 text-[var(--primary)]"
+                  : "bg-[var(--surface-container)] text-[var(--text-muted)]"
+              }`}
+            >
+              <Lock size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  {isUnlocked ? "Vault is Unlocked" : "Vault is Locked"}
+                </h3>
+                <span
+                  className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium ${
+                    isUnlocked
+                      ? "bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20"
+                      : "bg-[var(--surface-high)] text-[var(--text-muted)] border border-[var(--border)]"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isUnlocked ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]"
+                    }`}
+                  />
+                  {isUnlocked ? "ACTIVE IN MEMORY" : "LOCKED"}
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                {isUnlocked
+                  ? "Zero-knowledge AES-256-GCM key derived via Argon2id is loaded in memory. All sensitive credentials are ready."
+                  : "All private keys and passwords remain encrypted on disk. Unlock with your master password to begin."}
+              </p>
+            </div>
+          </div>
+
+          {isUnlocked && (
+            <button
+              onClick={lockVault}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--warning)] hover:bg-[var(--surface-highest)] transition-colors shrink-0 self-start sm:self-auto"
+            >
+              <Lock size={13} />
+              Lock Vault
+            </button>
           )}
         </div>
       </div>
-      {children}
-    </div>
-  );
-}
 
-// ─── main view ──────────────────────────────────────────────────────────────
-export function SettingsView() {
-  const { isUnlocked, lock: lockVault } = useVaultStore();
-
-  return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-6">
-      <div className="mx-auto w-full max-w-3xl space-y-8">
-
-        {/* Page header */}
-        <div>
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">Settings</h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Application preferences, security options and backup management.
+      {/* ── Vault Behavior Settings Card ──────────────────────────────────── */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden shadow-sm">
+        <div className="border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
+          <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <KeyRound size={15} className="text-[var(--secondary)]" />
+            Vault Behavior &amp; Login Preferences
+          </h4>
+          <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+            Configure how and when Termimus unlocks your vault on this machine.
           </p>
         </div>
 
-        {/* ── Security & Vault ───────────────────────────────────────────────── */}
-        <Section
-          icon={Lock}
-          title="Vault"
-          description="AES-256-GCM encrypted credential store. Master password never leaves this device."
-        >
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                  isUnlocked
-                    ? "bg-[var(--primary)]/15 text-[var(--primary)]"
-                    : "bg-[var(--surface-container)] text-[var(--text-muted)]"
-                }`}
-              >
-                <Lock size={16} />
+        <div className="divide-y divide-[var(--border)] text-xs">
+          {/* A. OS Keyring Integration */}
+          <div className="p-5 flex items-start justify-between gap-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
+                <Fingerprint size={16} className="text-[var(--primary)]" />
+                <span>Remember on this device (OS Keyring)</span>
               </div>
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-primary)]">
-                  {isUnlocked ? "Vault is unlocked" : "Vault is locked"}
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                Automatically unlocks the vault silently on app launch using your desktop's secure credential
+                store (<strong>KWallet / GNOME Secret Service</strong> on Linux, <strong>macOS Keychain</strong>, or <strong>Windows Credential Manager</strong>).
+                Your master password is never stored — only the derived AES-256 encryption key.
+              </p>
+              {keyringError && (
+                <p className="text-[11px] text-[var(--danger)] flex items-center gap-1.5 pt-1.5 font-medium">
+                  <AlertTriangle size={13} /> {keyringError}
                 </p>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  {isUnlocked
-                    ? "Credentials are accessible. Lock when you step away."
-                    : "Unlock to access SSH keys and passwords."}
-                </p>
-              </div>
+              )}
             </div>
-            {isUnlocked && (
-              <button
-                onClick={lockVault}
-                className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-1.5 text-xs font-semibold text-[var(--warning)] hover:bg-[var(--surface-highest)] transition-colors"
-              >
-                <Lock size={13} />
-                Lock Vault
-              </button>
-            )}
+
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+              <input
+                type="checkbox"
+                checked={useOsKeyring}
+                disabled={keyringLoading || !isInitialized}
+                onChange={(e) => handleToggleKeyring(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5.5 bg-[var(--surface-container)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-[var(--primary)]"></div>
+            </label>
           </div>
-        </Section>
 
-        {/* ── TOFU Known Hosts ──────────────────────────────────────────────── */}
-        <Section
-          icon={ShieldCheck}
-          title="Trusted Host Keys"
-          description="Server fingerprints trusted on first connection. A mismatch aborts the connection to protect against MITM attacks."
-        >
-          <KnownHostsTable />
-        </Section>
+          {/* B. Auto-Lock Policy */}
+          <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
+                <Timer size={16} className="text-[var(--secondary)]" />
+                <span>Auto-Lock Timeout</span>
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Automatically zeros memory and locks the vault when you are away from the computer.
+              </p>
+            </div>
 
-        {/* ── Backup & Restore ─────────────────────────────────────────────── */}
-        <Section
-          icon={Archive}
-          title="Backup &amp; Restore"
-          description="Export all hosts, snippets, tunnels and encrypted credentials. Optionally protect the entire file with a passphrase."
-        >
-          <BackupRestoreSection />
-        </Section>
+            <select
+              value={autoLockPolicy}
+              onChange={(e) => setAutoLockPolicy(e.target.value as AutoLockPolicy)}
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none shrink-0"
+            >
+              {(Object.keys(AUTO_LOCK_LABELS) as AutoLockPolicy[]).map((key) => (
+                <option key={key} value={key}>
+                  {AUTO_LOCK_LABELS[key]}
+                </option>
+              ))}
+            </select>
+          </div>
 
+          {/* C. Master Password Rotation & Danger Zone */}
+          <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <p className="font-semibold text-[var(--text-primary)]">Master Password &amp; Maintenance</p>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Rotate your master password (all credentials will be re-encrypted) or reset the vault.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => setIsChangePasswordOpen(true)}
+                disabled={!isUnlocked}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+              >
+                Change Master Password...
+              </button>
+
+              <button
+                onClick={handleResetVault}
+                className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3.5 py-2 text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/20 transition-colors"
+              >
+                Reset Vault
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* ── Change Password Modal Dialog ──────────────────────────────────── */}
+      {isChangePasswordOpen && (
+        <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />
+      )}
     </div>
   );
 }
 
-// ─── known-hosts inline sub-component ───────────────────────────────────────
-import { useEffect } from "react";
-import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
-import { useConfirmStore } from "../../stores/useConfirmStore";
-import { Server, RotateCw, Trash2, AlertTriangle } from "lucide-react";
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB 2: TRUSTED HOST KEYS (TOFU)
+// ══════════════════════════════════════════════════════════════════════════════
 
-function KnownHostsTable() {
+function KnownHostsTab() {
   const { knownHosts, isLoading, refresh, resetKnownHost } = useKnownHostsStore();
 
   useEffect(() => {
@@ -135,78 +353,321 @@ function KnownHostsTable() {
   }
 
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden">
-      {/* toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)]">
-        <span className="text-[11px] text-[var(--text-muted)]">
-          {knownHosts.length} trusted host{knownHosts.length !== 1 ? "s" : ""}
-        </span>
-        <button
-          onClick={() => refresh()}
-          disabled={isLoading}
-          title="Refresh"
-          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-white transition-colors"
-        >
-          <RotateCw size={13} className={isLoading ? "animate-spin" : ""} />
-        </button>
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden shadow-sm">
+        {/* toolbar */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] bg-[var(--surface-container)]/30">
+          <div>
+            <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <ShieldCheck size={16} className="text-[var(--primary)]" />
+              Trusted Host Key Fingerprints (TOFU)
+            </h4>
+            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+              Termimus verifies remote server public keys on every connection to prevent Man-in-the-Middle (MITM) attacks.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-[var(--text-muted)]">
+              {knownHosts.length} host{knownHosts.length !== 1 ? "s" : ""}
+            </span>
+            <button
+              onClick={() => refresh()}
+              disabled={isLoading}
+              title="Refresh known hosts"
+              className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-white transition-colors"
+            >
+              <RotateCw size={14} className={isLoading ? "animate-spin" : ""} />
+            </button>
+          </div>
+        </div>
+
+        {knownHosts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-14 text-center text-[var(--text-muted)]">
+            <Server size={36} className="mb-2 opacity-30" />
+            <p className="text-xs font-semibold text-[var(--text-primary)]">No trusted hosts recorded yet</p>
+            <p className="text-[11px] mt-1 max-w-sm text-[var(--text-muted)]">
+              When you establish your first SSH connection to a server, its cryptographic public key fingerprint is safely remembered here.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[var(--surface-container)] text-[10px] uppercase font-mono text-[var(--text-muted)] border-b border-[var(--border)]">
+                <tr>
+                  <th className="py-2.5 pl-5">Server Address</th>
+                  <th className="py-2.5 px-3">Algorithm</th>
+                  <th className="py-2.5 px-3">SHA256 Fingerprint</th>
+                  <th className="py-2.5 pr-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]/40 font-mono">
+                {knownHosts.map((kh) => (
+                  <tr
+                    key={`${kh.address}:${kh.port}`}
+                    className="hover:bg-[var(--surface-container)]/50 transition-colors"
+                  >
+                    <td className="py-3 pl-5 font-semibold text-[var(--text-primary)]">
+                      {kh.address}:{kh.port}
+                    </td>
+                    <td className="py-3 px-3 text-[var(--secondary)]">{kh.key_type}</td>
+                    <td className="py-3 px-3 text-[11px] text-[var(--primary)] font-mono select-all">
+                      {kh.fingerprint}
+                    </td>
+                    <td className="py-3 pr-5 text-right">
+                      <button
+                        onClick={() => handleReset(kh.address, kh.port)}
+                        title="Reset host key"
+                        className="inline-flex items-center gap-1 rounded bg-[var(--danger)]/10 px-2 py-1 text-[11px] text-[var(--danger)] hover:bg-[var(--danger)]/20 transition-colors border border-[var(--danger)]/20"
+                      >
+                        <Trash2 size={11} />
+                        <span>Reset</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* MITM Security notice */}
+        <div className="flex items-start gap-2.5 border-t border-[var(--border)] bg-[var(--surface-container)]/30 px-5 py-3 text-[11px] text-[var(--text-secondary)]">
+          <ShieldAlert size={15} className="shrink-0 mt-0.5 text-[var(--warning)]" />
+          <span>
+            <strong>Anti-MITM Protection:</strong> If a server's fingerprint changes unexpectedly, Termimus aborts the connection immediately with a security alert. Only reset a key if you intentionally reinstalled or replaced the remote server.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TAB 3: ABOUT & ARCHITECTURE
+// ══════════════════════════════════════════════════════════════════════════════
+
+function AboutTab() {
+  return (
+    <div className="space-y-5">
+      {/* App banner */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-sm">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary)]/15 text-[var(--primary)] shrink-0">
+            <Cpu size={26} />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">Termimus</h3>
+              <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30">
+                v0.1.0
+              </span>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Self-hosted, Local-First SSH &amp; Server Manager desktop client.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
+              <Shield size={14} className="text-[var(--primary)]" />
+              <span>Zero-Knowledge</span>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              All credentials are encrypted locally with AES-256-GCM. The encryption key never leaves this machine.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
+              <Layers size={14} className="text-[var(--secondary)]" />
+              <span>Local-First</span>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Everything works 100% offline via embedded SQLite. No mandatory cloud accounts or tracking.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
+              <Server size={14} className="text-[var(--tertiary)]" />
+              <span>Self-Hosted Sync</span>
+            </div>
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Designed for future peer sync via self-hosted Docker relay without third-party cloud lock-in.
+            </p>
+          </div>
+        </div>
       </div>
 
-      {knownHosts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-10 text-center text-[var(--text-muted)]">
-          <Server size={30} className="mb-2 opacity-30" />
-          <p className="text-xs font-medium text-[var(--text-primary)]">No trusted hosts yet</p>
-          <p className="text-[11px] mt-0.5 max-w-xs">
-            Server fingerprints appear here after your first SSH connection.
-          </p>
+      {/* Tech specs card */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 space-y-3 shadow-sm text-xs">
+        <h4 className="font-semibold text-[var(--text-primary)]">Core Technologies</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)]/50 p-2.5">
+            <span className="text-[var(--text-muted)] block text-[10px]">BACKEND</span>
+            <span className="text-[var(--text-primary)] font-semibold">Tauri v2 + Rust</span>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)]/50 p-2.5">
+            <span className="text-[var(--text-muted)] block text-[10px]">FRONTEND</span>
+            <span className="text-[var(--text-primary)] font-semibold">React 19 + Vite</span>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)]/50 p-2.5">
+            <span className="text-[var(--text-muted)] block text-[10px]">DATABASE</span>
+            <span className="text-[var(--text-primary)] font-semibold">SQLite (rusqlite)</span>
+          </div>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)]/50 p-2.5">
+            <span className="text-[var(--text-muted)] block text-[10px]">TERMINAL</span>
+            <span className="text-[var(--text-primary)] font-semibold">@xterm/xterm 6</span>
+          </div>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[var(--surface-container)] text-[10px] uppercase font-mono text-[var(--text-muted)] border-b border-[var(--border)]">
-              <tr>
-                <th className="py-2 pl-4">Server</th>
-                <th className="py-2 px-2">Key Type</th>
-                <th className="py-2 px-2">SHA256 Fingerprint</th>
-                <th className="py-2 pr-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]/40 font-mono">
-              {knownHosts.map((kh) => (
-                <tr
-                  key={`${kh.address}:${kh.port}`}
-                  className="hover:bg-[var(--surface-container)]/50 transition-colors"
-                >
-                  <td className="py-2.5 pl-4 font-semibold text-[var(--text-primary)]">
-                    {kh.address}:{kh.port}
-                  </td>
-                  <td className="py-2.5 px-2 text-[var(--secondary)]">{kh.key_type}</td>
-                  <td className="py-2.5 px-2 text-[11px] text-[var(--primary)] truncate max-w-xs">
-                    {kh.fingerprint}
-                  </td>
-                  <td className="py-2.5 pr-4 text-right">
-                    <button
-                      onClick={() => handleReset(kh.address, kh.port)}
-                      title="Reset host key"
-                      className="inline-flex items-center gap-1 rounded bg-[var(--danger)]/10 px-2 py-1 text-[11px] text-[var(--danger)] hover:bg-[var(--danger)]/20 transition-colors border border-[var(--danger)]/20"
-                    >
-                      <Trash2 size={11} />
-                      Reset
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      </div>
+    </div>
+  );
+}
 
-      {/* MITM warning footer */}
-      <div className="flex items-start gap-2 border-t border-[var(--border)] bg-[var(--surface-container)]/30 px-4 py-2.5 text-[11px] text-[var(--text-secondary)]">
-        <AlertTriangle size={13} className="shrink-0 mt-0.5 text-[var(--warning)]" />
-        <span>
-          If a server's fingerprint changes unexpectedly, Termimus aborts the connection with a security alert.
-          Only reset a key if you intentionally reinstalled or replaced that server.
-        </span>
+// ══════════════════════════════════════════════════════════════════════════════
+// MODAL: CHANGE MASTER PASSWORD
+// ══════════════════════════════════════════════════════════════════════════════
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.changeVaultPassword(oldPassword, newPassword);
+      setSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl space-y-4 text-xs">
+        <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+          <div className="flex items-center gap-2">
+            <KeyRound size={16} className="text-[var(--primary)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              Change Master Password
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            className="text-[var(--text-muted)] hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-[var(--danger)] flex items-center gap-2">
+            <AlertTriangle size={13} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {success ? (
+          <div className="rounded-md border border-[var(--success)]/30 bg-[var(--success)]/10 px-3 py-3 text-[var(--success)] flex items-center gap-2 font-medium">
+            <CheckCircle2 size={16} />
+            <span>Master password changed successfully! All credentials re-encrypted.</span>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="mb-1 block font-medium text-[var(--text-muted)]">
+                Current Master Password
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                placeholder="Enter current password..."
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block font-medium text-[var(--text-muted)]">
+                New Master Password
+              </label>
+              <input
+                type="password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 6 characters..."
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block font-medium text-[var(--text-muted)]">
+                Confirm New Password
+              </label>
+              <input
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat new password..."
+                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
+              />
+            </div>
+
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Changing your master password will re-encrypt all stored SSH keys and passwords
+              with the new key. OS Keyring will need to be re-enabled if in use.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="rounded-md px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-4 py-1.5 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50"
+              >
+                {submitting && <Loader2 size={13} className="animate-spin" />}
+                {submitting ? "Re-encrypting..." : "Update Password"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

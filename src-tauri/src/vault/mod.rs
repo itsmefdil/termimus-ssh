@@ -107,6 +107,20 @@ impl VaultManager {
         *key_guard = Some(key);
     }
 
+    /// Export the current derived key as a hex string (for storing in the OS keyring).
+    /// Errors if the vault is currently locked.
+    pub fn export_key_hex(&self) -> Result<String, String> {
+        let key_guard = self.derived_key.read().unwrap();
+        let key_bytes = key_guard
+            .as_ref()
+            .ok_or_else(|| "Vault is locked".to_string())?;
+        let mut hex = String::with_capacity(64);
+        for b in key_bytes {
+            hex.push_str(&format!("{b:02x}"));
+        }
+        Ok(hex)
+    }
+
     /// Encrypt plaintext using AES-256-GCM
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
         let key_guard = self.derived_key.read().unwrap();

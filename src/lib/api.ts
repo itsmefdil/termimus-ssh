@@ -152,6 +152,12 @@ export const api = {
   setupVault: (password: string) => invoke<void>("vault_setup", { password }),
   unlockVault: (password: string) => invoke<boolean>("vault_unlock", { password }),
   lockVault: () => invoke<void>("vault_lock"),
+  saveVaultKeyring: () => invoke<void>("vault_keyring_save"),
+  unlockVaultKeyring: () => invoke<boolean>("vault_keyring_unlock"),
+  clearVaultKeyring: () => invoke<void>("vault_keyring_clear"),
+  changeVaultPassword: (oldPassword: string, newPassword: string) =>
+    invoke<void>("vault_change_password", { oldPassword, newPassword }),
+  resetVault: () => invoke<void>("vault_reset"),
 
   // Hosts
   listHosts: () => invoke<Host[]>("host_list"),

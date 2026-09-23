@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Lock, ShieldCheck, KeyRound } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
+import { api } from "../../lib/api";
 
 export function VaultModal() {
-  const { isInitialized, isUnlocked, setup, unlock, error } = useVaultStore();
+  const { isInitialized, isUnlocked, setup, unlock, refresh, error } = useVaultStore();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -122,6 +124,30 @@ export function VaultModal() {
               ? "Unlock Vault"
               : "Create Vault"}
           </button>
+
+          {isInitialized && (
+            <div className="pt-2 text-center border-t border-[var(--border)]/50">
+              <button
+                type="button"
+                onClick={() => {
+                  useConfirmStore.getState().confirm({
+                    title: "Reset Master Password & Vault?",
+                    message:
+                      "Forgot your master password? You can reset the vault to start fresh. WARNING: All stored credentials, passwords, and SSH keys will be permanently deleted.",
+                    confirmLabel: "Reset Vault",
+                    isDanger: true,
+                    onConfirm: async () => {
+                      await api.resetVault();
+                      await refresh();
+                    },
+                  });
+                }}
+                className="text-[11px] text-[var(--text-muted)] hover:text-[var(--danger)] transition-colors underline"
+              >
+                Forgot Master Password? Reset Vault
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

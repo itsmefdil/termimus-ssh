@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
+import { useSettingsStore } from "./useSettingsStore";
 
 interface VaultState {
   isInitialized: boolean;
@@ -22,6 +23,24 @@ export const useVaultStore = create<VaultState>((set) => ({
     set({ isLoading: true });
     try {
       const status = await api.getVaultStatus();
+
+      // If vault is initialized but locked, attempt silent unlock via OS keyring
+      // before surfacing the password modal to the user.
+      if (status.is_initialized && !status.is_unlocked) {
+        const { useOsKeyring } = useSettingsStore.getState();
+        if (useOsKeyring) {
+          try {
+            const unlocked = await api.unlockVaultKeyring();
+            if (unlocked) {
+              set({ isInitialized: true, isUnlocked: true, isLoading: false, error: null });
+              return;
+            }
+          } catch {
+            // Keyring unavailable or entry missing — fall through to password modal.
+          }
+        }
+      }
+
       set({
         isInitialized: status.is_initialized,
         isUnlocked: status.is_unlocked,
@@ -38,6 +57,16 @@ export const useVaultStore = create<VaultState>((set) => ({
     try {
       await api.setupVault(password);
       set({ isInitialized: true, isUnlocked: true });
+
+      // Auto-save to keyring if the user has it enabled.
+      const { useOsKeyring } = useSettingsStore.getState();
+      if (useOsKeyring) {
+        try {
+          await api.saveVaultKeyring();
+        } catch {
+          // Non-fatal — keyring save failure shouldn't block vault setup.
+        }
+      }
     } catch (e) {
       set({ error: String(e) });
       throw e;
@@ -49,6 +78,16 @@ export const useVaultStore = create<VaultState>((set) => ({
     try {
       await api.unlockVault(password);
       set({ isUnlocked: true });
+
+      // Refresh keyring entry after a successful manual unlock.
+      const { useOsKeyring } = useSettingsStore.getState();
+      if (useOsKeyring) {
+        try {
+          await api.saveVaultKeyring();
+        } catch {
+          // Non-fatal.
+        }
+      }
     } catch (e) {
       set({ error: String(e) });
       throw e;

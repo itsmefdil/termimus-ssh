@@ -33,6 +33,7 @@ rand = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 zeroize = { version = "1", features = ["derive"] }
+keyring = { version = "4", features = ["default"] }
 russh-sftp = "3.0.0"
 anyhow = "1.0.104"
 tauri-plugin-dialog = "2"
