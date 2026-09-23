@@ -97,7 +97,7 @@ export function IdentityModal() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. ClickHost, friczky, secure, production-root"
+              placeholder="e.g. admin-login, database-user, production-root"
               className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
             />
           </div>

@@ -270,7 +270,7 @@ export function KeyModal() {
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. fadil, ai-care, production-key"
+                placeholder="e.g. deploy-key, staging-server, production-key"
                 className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
               />
             </div>
