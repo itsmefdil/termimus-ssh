@@ -8,8 +8,6 @@ import {
   Settings,
   CloudCheck,
   Lock,
-  PanelLeftClose,
-  PanelLeftOpen,
 } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -23,10 +21,14 @@ interface SidebarProps {
   activeNav: ActiveTab;
   onNavChange: (tab: ActiveTab) => void;
   isCollapsed: boolean;
-  onToggleCollapsed: () => void;
 }
 
-export function Sidebar({ activeNav, onNavChange, isCollapsed, onToggleCollapsed }: SidebarProps) {
+// Single timing shared by the sidebar width and every label/badge fade inside
+// it, so the whole collapse/expand reads as one smooth motion instead of the
+// content snapping to a different layout mid-transition.
+const TRANSITION = "duration-250 ease-in-out";
+
+export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
   const { isUnlocked, lock: lockVault } = useVaultStore();
   const { hosts } = useHostStore();
   const { tabs } = useSessionStore();
@@ -50,190 +52,143 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed, onToggleCollapsed
 
   return (
     <aside
-      className={`flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--canvas)] transition-all duration-200 select-none ${
-        isCollapsed ? "w-[64px] items-center" : "w-56"
+      className={`flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--canvas)] select-none transition-[width] ${TRANSITION} ${
+        isCollapsed ? "w-[64px]" : "w-56"
       }`}
     >
       {/* Navigation Items */}
-      <nav
-        className={`flex flex-1 flex-col w-full overflow-y-auto ${
-          isCollapsed ? "items-center gap-2.5 px-2 pt-3 pb-1" : "gap-1 px-2.5 pt-3 pb-1"
-        }`}
-      >
+      <nav className="flex flex-1 flex-col w-full overflow-y-auto gap-1 px-2.5 pt-3 pb-1">
         {navItems.map(({ icon: Icon, label, id, badge, badgeDot }, idx) => {
           const active = activeNav === id;
-          return isCollapsed ? (
+          return (
             <button
               key={`${id}-${idx}`}
               onClick={() => onNavChange(id)}
-              title={label}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+              title={isCollapsed ? label : undefined}
+              className={`group flex items-center rounded-lg py-2 text-left transition-colors ${
+                isCollapsed ? "justify-center px-0" : "justify-between px-2.5"
+              } ${
                 active
-                  ? "bg-[var(--surface-high)] text-[var(--primary)] shadow-sm"
-                  : "text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                  ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-md shadow-[var(--primary)]/10"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
               }`}
             >
-              <Icon size={20} className="shrink-0" />
-              {badge !== undefined && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[var(--surface-highest)] px-1 font-mono text-[9px] text-[var(--primary)] border border-[var(--border)] shadow-sm">
-                  {badge}
-                </span>
-              )}
-              {badgeDot && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[var(--secondary)] animate-pulse" />
-              )}
-            </button>
-          ) : (
-            <button
-              key={`${id}-${idx}`}
-              onClick={() => onNavChange(id)}
-              className={`group flex items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors ${
-                active
-                  ? "border-l-2 border-[var(--primary)] bg-[var(--surface-high)] text-[var(--primary)] font-semibold"
-                  : "border-l-2 border-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              <span className="flex items-center gap-2.5 truncate">
+              <span className="flex min-w-0 items-center gap-2.5">
                 <Icon
                   size={16}
-                  className={
+                  className={`shrink-0 ${
                     active
-                      ? "text-[var(--primary)] shrink-0"
-                      : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
-                  }
+                      ? "text-[var(--primary)]"
+                      : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+                  }`}
                 />
-                <span className="text-[13px] truncate">{label}</span>
-              </span>
-              {badge !== undefined && (
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-mono shrink-0 ${
-                    active
-                      ? "bg-[var(--surface-highest)] text-[var(--text-secondary)]"
-                      : "bg-[var(--surface-container)] text-[var(--text-muted)]"
+                  className={`overflow-hidden whitespace-nowrap text-[13px] transition-[width,opacity] ${TRANSITION} ${
+                    isCollapsed ? "w-0 opacity-0" : "w-[130px] opacity-100"
                   }`}
                 >
-                  {badge}
+                  {label}
                 </span>
-              )}
-              {badgeDot && (
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--secondary)] shrink-0" />
+              </span>
+              {(badge !== undefined || badgeDot) && (
+                <span
+                  className={`flex shrink-0 items-center overflow-hidden transition-[width,opacity] ${TRANSITION} ${
+                    isCollapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                  }`}
+                >
+                  {badge !== undefined && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${
+                        active
+                          ? "bg-[var(--surface-highest)] text-[var(--text-secondary)]"
+                          : "bg-[var(--surface-container)] text-[var(--text-muted)]"
+                      }`}
+                    >
+                      {badge}
+                    </span>
+                  )}
+                  {badgeDot && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--secondary)]" />
+                  )}
+                </span>
               )}
             </button>
           );
         })}
 
-        {/* Bottom Actions: Settings & Expand/Collapse Toggle */}
-        <div
-          className={`w-full mt-auto flex flex-col pt-2 ${
-            isCollapsed ? "items-center gap-2" : "gap-1"
-          }`}
-        >
-          {isCollapsed ? (
-            <>
-              <button
-                title="Settings & Sync"
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Settings size={20} />
-              </button>
-              <button
-                onClick={onToggleCollapsed}
-                title="Expand sidebar"
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--primary)] transition-colors"
-              >
-                <PanelLeftOpen size={20} />
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]">
-                <Settings
-                  size={16}
-                  className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
-                />
-                <span className="text-[13px] truncate">Settings & Sync</span>
-              </button>
-              <button
-                onClick={onToggleCollapsed}
-                className="group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
-              >
-                <PanelLeftClose
-                  size={16}
-                  className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] shrink-0"
-                />
-                <span className="text-[13px] truncate">Collapse Sidebar</span>
-              </button>
-            </>
-          )}
+        {/* Bottom Actions: Settings */}
+        <div className="w-full mt-auto flex flex-col gap-1 pt-2">
+          <button
+            title={isCollapsed ? "Settings & Sync" : undefined}
+            className={`group flex items-center rounded-lg py-2 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] ${
+              isCollapsed ? "justify-center px-0" : "justify-start gap-2.5 px-2.5"
+            }`}
+          >
+            <Settings
+              size={16}
+              className="shrink-0 text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+            />
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[13px] transition-[width,opacity] ${TRANSITION} ${
+                isCollapsed ? "w-0 opacity-0" : "w-[130px] opacity-100"
+              }`}
+            >
+              Settings & Sync
+            </span>
+          </button>
         </div>
       </nav>
 
       {/* Footer: Vault Status */}
       <div
-        className={`border-t border-[var(--border)] bg-[var(--surface-low)] w-full ${
-          isCollapsed ? "flex flex-col items-center py-2.5 gap-2 px-2" : "p-2.5 flex flex-col gap-1.5"
+        className={`w-full border-t border-[var(--border)] bg-[var(--surface-low)] transition-all ${TRANSITION} ${
+          isCollapsed ? "flex flex-col items-center gap-2 py-2.5 px-2" : "flex flex-col gap-1.5 p-2.5"
         }`}
       >
-        {isCollapsed ? (
-          <>
-            <span
-              title={isUnlocked ? "Vault Unlocked (AES-256 E2E)" : "Vault Locked"}
-              className="relative flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] transition-colors"
-            >
+        <div
+          className={`flex w-full items-center ${
+            isCollapsed ? "justify-center" : "justify-between px-1"
+          }`}
+        >
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="relative flex h-7 w-7 shrink-0 items-center justify-center">
               <CloudCheck
-                size={19}
-                className={isUnlocked ? "text-[var(--primary)]" : "text-[var(--text-muted)]"}
+                size={isCollapsed ? 19 : 14}
+                className={`transition-[width,height] ${TRANSITION} ${
+                  isUnlocked ? "text-[var(--primary)]" : "text-[var(--text-muted)]"
+                }`}
               />
               {isUnlocked && (
-                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
+                <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
               )}
             </span>
-            {isUnlocked && (
-              <button
-                onClick={lockVault}
-                title="Lock Vault"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--warning)] hover:bg-[var(--surface-container)] transition-colors"
-              >
-                <Lock size={15} />
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-1.5 truncate">
-                <CloudCheck
-                  size={14}
-                  className={
-                    isUnlocked
-                      ? "text-[var(--primary)] shrink-0"
-                      : "text-[var(--text-muted)] shrink-0"
-                  }
-                />
-                <span className="text-[11px] font-semibold text-[var(--text-primary)] truncate">
-                  {isUnlocked ? "Vault Unlocked" : "Vault Locked"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {isUnlocked && (
-                  <button
-                    onClick={lockVault}
-                    title="Lock vault"
-                    className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--warning)] transition-colors"
-                  >
-                    <Lock size={13} />
-                  </button>
-                )}
-                {isUnlocked && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-between px-1 font-mono text-[10px] text-[var(--text-muted)]">
-              <span>E2E AES-256 Encrypted</span>
-            </div>
-          </>
-        )}
+            <span
+              className={`overflow-hidden whitespace-nowrap text-[11px] font-semibold text-[var(--text-primary)] transition-[width,opacity] ${TRANSITION} ${
+                isCollapsed ? "w-0 opacity-0" : "w-[110px] opacity-100"
+              }`}
+            >
+              {isUnlocked ? "Vault Unlocked" : "Vault Locked"}
+            </span>
+          </div>
+          {isUnlocked && (
+            <button
+              onClick={lockVault}
+              title="Lock vault"
+              className={`shrink-0 rounded text-[var(--text-muted)] transition-colors hover:text-[var(--warning)] ${
+                isCollapsed ? "p-0.5" : "p-0.5"
+              }`}
+            >
+              <Lock size={isCollapsed ? 15 : 13} />
+            </button>
+          )}
+        </div>
+        <div
+          className={`overflow-hidden whitespace-nowrap px-1 font-mono text-[10px] text-[var(--text-muted)] transition-[height,opacity] ${TRANSITION} ${
+            isCollapsed ? "h-0 opacity-0" : "h-4 opacity-100"
+          }`}
+        >
+          <span>E2E AES-256 Encrypted</span>
+        </div>
       </div>
     </aside>
   );

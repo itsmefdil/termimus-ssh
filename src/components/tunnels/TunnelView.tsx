@@ -108,20 +108,20 @@ export function TunnelView() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span
-                        className={`h-2.5 w-2.5 rounded-full ${
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                           isActive
                             ? "bg-[var(--success)] animate-pulse"
                             : "bg-[var(--text-muted)]/40"
                         }`}
                       />
-                      <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                      <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
                         {rule.label}
                       </h3>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <button
                         onClick={() => openEditModal(rule)}
                         disabled={isActive}
@@ -158,7 +158,7 @@ export function TunnelView() {
                   </div>
 
                   {/* Via Host */}
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] mb-4">
+                  <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)] mb-4">
                     <Server size={12} className="shrink-0" />
                     <span className="truncate">
                       via {host ? host.label : "Unknown host"}

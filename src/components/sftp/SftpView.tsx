@@ -108,7 +108,7 @@ export function SftpView() {
       )}
 
       {/* Dual Pane + Center Transfer Buttons */}
-      <div className="flex flex-1 gap-2 overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
         {/* Left Pane: Local Files */}
         <FilePane
           title="Local Machine"
@@ -126,7 +126,7 @@ export function SftpView() {
         />
 
         {/* Center Transfer Buttons */}
-        <div className="flex flex-col items-center justify-center gap-2 px-1">
+        <div className="flex shrink-0 flex-col items-center justify-center gap-2 px-1">
           <button
             onClick={uploadSelected}
             disabled={

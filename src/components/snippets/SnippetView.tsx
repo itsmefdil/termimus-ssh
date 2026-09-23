@@ -146,8 +146,8 @@ export function SnippetView() {
                   key={snippet.id}
                   className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate pr-2">
+                  <div className="flex min-w-0 items-center justify-between mb-2">
+                    <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)] pr-2">
                       {snippet.title}
                     </h3>
                     <div className="flex items-center gap-1 shrink-0">

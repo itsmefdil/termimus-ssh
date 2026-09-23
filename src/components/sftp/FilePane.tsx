@@ -62,7 +62,7 @@ export function FilePane({
   }
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]">
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]">
       {/* Pane Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
         <div className="min-w-0">
@@ -154,7 +154,7 @@ export function FilePane({
             Empty directory
           </div>
         ) : (
-          <table className="w-full text-left text-xs">
+          <table className="w-full table-fixed text-left text-xs">
             <thead className="sticky top-0 bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] border-b border-[var(--border)]">
               <tr>
                 <th className="py-1.5 pl-3">Name</th>
@@ -183,7 +183,7 @@ export function FilePane({
                         : "hover:bg-[var(--card)] text-[var(--text-primary)]"
                     }`}
                   >
-                    <td className="py-1.5 pl-3 flex items-center gap-2 truncate max-w-[200px]">
+                    <td className="py-1.5 pl-3 flex min-w-0 items-center gap-2">
                       {entry.is_dir ? (
                         <Folder
                           size={14}
