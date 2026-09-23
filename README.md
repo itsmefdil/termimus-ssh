@@ -33,6 +33,20 @@ Unlike SaaS alternatives that force cloud account registration, Termimus is **Lo
 
 ---
 
+## 📥 Download
+
+Prebuilt installers for every release are published automatically to the **[GitHub Releases](https://github.com/itsmefdil/termimus-ssh/releases/latest)** page — no build tools required.
+
+| Platform | Installer | Notes |
+|---|---|---|
+| 🐧 Linux | `.deb` / `.AppImage` | Debian/Ubuntu package or portable AppImage (any distro) |
+| 🍎 macOS | `.dmg` | Universal binary — runs natively on both Intel and Apple Silicon |
+| 🪟 Windows | `.msi` / `.exe` | MSI installer or NSIS setup executable |
+
+> Prefer to build from source, or want to contribute? See [Getting Started](#-getting-started) below.
+
+---
+
 ## ✨ Features at a Glance
 
 ### 🖥️ Native Terminal Experience

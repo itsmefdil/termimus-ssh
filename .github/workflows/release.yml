@@ -1,0 +1,68 @@
+name: Build and Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'ubuntu-22.04'
+            args: '--bundles deb,appimage'
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+          - platform: 'windows-latest'
+            args: '--bundles msi,nsis'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config build-essential \
+            libwebkit2gtk-4.1-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build & Publish Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Termimus ${{ github.ref_name }}'
+          releaseBody: 'See the CHANGELOG or commit history for details on this release. Installers for Linux (.deb, .AppImage), macOS (.dmg, universal binary), and Windows (.msi, .exe) are attached below.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
