@@ -156,6 +156,8 @@ export const api = {
   saveHost: (input: HostInput, hostId?: string) =>
     invoke<Host>("host_save", { input, hostId: hostId ?? null }),
   deleteHost: (id: string) => invoke<void>("host_delete", { id }),
+  getHostPassword: (hostId: string) =>
+    invoke<string>("host_get_password", { hostId }),
 
   // Folders
   listFolders: () => invoke<Folder[]>("folder_list"),
@@ -193,6 +195,8 @@ export const api = {
     invoke<void>("keychain_delete", { id }),
   getKeychainPublicKey: (id: string) =>
     invoke<string>("keychain_get_public_key", { id }),
+  getCredentialSecret: (id: string) =>
+    invoke<string>("credential_get_secret", { id }),
 
   // SFTP Remote
   connectSftp: (hostId: string, sessionId: string) =>

@@ -153,7 +153,7 @@ function App() {
       <VaultModal />
 
       {/* Host Create/Edit Modal */}
-      <HostModal />
+      <HostModal onOpenKeychain={() => setActiveNav("keychain")} />
 
       {/* App-wide Delete & Action Confirmation Modal */}
       <ConfirmModal />

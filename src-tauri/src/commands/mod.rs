@@ -113,6 +113,7 @@ pub fn host_list(state: State<AppState>) -> Result<Vec<Host>, String> {
 pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<String>) -> Result<Host, String> {
     let now = Utc::now().to_rfc3339();
     let id = host_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let existing = state.db.get_host(&id).map_err(|e| e.to_string())?;
 
     // A Keychain item was picked from the dropdown — link directly to it,
     // no new anonymous credential needed.
@@ -133,8 +134,22 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
                     _ => (None, None),
                 };
 
+                let cred_id = if let Some(existing_cred_id) = existing.as_ref().and_then(|h| h.credential_id.as_ref()) {
+                    if let Ok(Some(existing_cred)) = state.db.get_credential(existing_cred_id) {
+                        if existing_cred.name.is_empty() {
+                            existing_cred_id.clone()
+                        } else {
+                            Uuid::new_v4().to_string()
+                        }
+                    } else {
+                        Uuid::new_v4().to_string()
+                    }
+                } else {
+                    Uuid::new_v4().to_string()
+                };
+
                 let cred = Credential {
-                    id: Uuid::new_v4().to_string(),
+                    id: cred_id,
                     kind: input.auth_method.clone(),
                     ciphertext,
                     nonce,
@@ -155,7 +170,6 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
         }
     }
 
-    let existing = state.db.get_host(&id).map_err(|e| e.to_string())?;
     let created_at = existing.as_ref().map(|h| h.created_at.clone()).unwrap_or_else(|| now.clone());
 
     if credential_id.is_none() {
@@ -501,6 +515,48 @@ pub fn keychain_get_public_key(state: State<AppState>, id: String) -> Result<Str
         return Err("This Keychain item has no public key".to_string());
     }
     Ok(cred.public_key)
+}
+
+/// Returns the decrypted password for a host (used to populate the host edit form).
+#[tauri::command]
+pub fn host_get_password(state: State<AppState>, host_id: String) -> Result<String, String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault must be unlocked to view password".to_string());
+    }
+    let host = state
+        .db
+        .get_host(&host_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Host not found".to_string())?;
+
+    if let Some(cred_id) = &host.credential_id {
+        let cred = state
+            .db
+            .get_credential(cred_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Credential record not found".to_string())?;
+
+        let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+        String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 password: {e}"))
+    } else {
+        Ok(String::new())
+    }
+}
+
+/// Returns the decrypted secret for a Keychain item (used to view saved password identity).
+#[tauri::command]
+pub fn credential_get_secret(state: State<AppState>, id: String) -> Result<String, String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault must be unlocked to view credentials".to_string());
+    }
+    let cred = state
+        .db
+        .get_credential(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Credential record not found".to_string())?;
+
+    let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+    String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 secret: {e}"))
 }
 
 // ================= SFTP COMMANDS =================
