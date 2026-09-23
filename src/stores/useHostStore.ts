@@ -17,7 +17,7 @@ interface HostState {
   saveHost: (input: HostInput, hostId?: string) => Promise<void>;
   deleteHost: (id: string) => Promise<void>;
 
-  saveFolder: (name: string, parentId?: string) => Promise<void>;
+  saveFolder: (name: string, parentId?: string, id?: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
 
   setSelectedTag: (tag: string | null) => void;
@@ -67,8 +67,8 @@ export const useHostStore = create<HostState>((set, get) => ({
     await get().refresh();
   },
 
-  saveFolder: async (name: string, parentId?: string) => {
-    await api.saveFolder(name, parentId);
+  saveFolder: async (name: string, parentId?: string, id?: string) => {
+    await api.saveFolder(name, parentId, id);
     await get().refresh();
   },
 

@@ -159,8 +159,8 @@ export const api = {
 
   // Folders
   listFolders: () => invoke<Folder[]>("folder_list"),
-  saveFolder: (name: string, parentId?: string) =>
-    invoke<Folder>("folder_save", { name, parentId: parentId ?? null }),
+  saveFolder: (name: string, parentId?: string, id?: string) =>
+    invoke<Folder>("folder_save", { name, parentId: parentId ?? null, id: id ?? null }),
   deleteFolder: (id: string) => invoke<void>("folder_delete", { id }),
 
   // SSH Sessions

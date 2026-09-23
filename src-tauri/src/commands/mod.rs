@@ -196,9 +196,14 @@ pub fn folder_list(state: State<AppState>) -> Result<Vec<Folder>, String> {
 }
 
 #[tauri::command]
-pub fn folder_save(state: State<AppState>, name: String, parent_id: Option<String>) -> Result<Folder, String> {
+pub fn folder_save(
+    state: State<AppState>,
+    name: String,
+    parent_id: Option<String>,
+    id: Option<String>,
+) -> Result<Folder, String> {
     let folder = Folder {
-        id: Uuid::new_v4().to_string(),
+        id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
         name,
         parent_id,
         created_at: Utc::now().to_rfc3339(),

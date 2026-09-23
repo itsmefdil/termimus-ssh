@@ -26,7 +26,7 @@ export function FolderModal() {
 
     setSubmitting(true);
     try {
-      await saveFolder(name.trim());
+      await saveFolder(name.trim(), editingFolder?.parent_id ?? undefined, editingFolder?.id);
       closeFolderModal();
     } catch (err) {
       setError(String(err));
