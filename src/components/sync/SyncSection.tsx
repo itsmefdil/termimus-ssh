@@ -112,7 +112,12 @@ export function SyncSection() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === "SYNC_UPDATED") {
-              // Remote update detected — auto pull changes
+              const myDeviceId = deviceName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+              if (data.device_id && data.device_id === myDeviceId) {
+                // Ignore broadcast originated from this device itself
+                return;
+              }
+              // Remote update detected from another device — auto pull changes
               handlePull();
             }
           } catch {

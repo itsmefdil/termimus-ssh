@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/termimus/termimus-server/internal/config"
@@ -80,9 +81,9 @@ func (h *Handler) GetBundle(w http.ResponseWriter, r *http.Request) {
 }
 
 type PushBundleRequest struct {
-	DeviceID      string `json:"device_id"`
-	DeviceName    string `json:"device_name"`
-	EncryptedBlob string `json:"encrypted_blob"`
+	DeviceID      string          `json:"device_id"`
+	DeviceName    string          `json:"device_name"`
+	EncryptedBlob json.RawMessage `json:"encrypted_blob"`
 }
 
 // ── POST /api/v1/sync/bundle ────────────────────────────────────────────────
@@ -100,10 +101,29 @@ func (h *Handler) PostBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.EncryptedBlob == "" {
+	trimmedBlob := strings.TrimSpace(string(req.EncryptedBlob))
+	if trimmedBlob == "" || trimmedBlob == "null" {
 		writeError(w, http.StatusBadRequest, "encrypted_blob is required")
 		return
 	}
+
+	// Support both string-wrapped JSON and raw JSON object payloads
+	var blobStr string
+	if len(trimmedBlob) > 0 && trimmedBlob[0] == '"' {
+		// It's a quoted JSON string literal — unescape it
+		if err := json.Unmarshal(req.EncryptedBlob, &blobStr); err != nil {
+			blobStr = trimmedBlob
+		}
+	} else {
+		// It's a raw JSON object or array
+		blobStr = trimmedBlob
+	}
+
+	if !json.Valid([]byte(blobStr)) {
+		writeError(w, http.StatusBadRequest, "encrypted_blob must be valid JSON")
+		return
+	}
+
 	if req.DeviceID == "" {
 		req.DeviceID = "unknown-device"
 	}
@@ -111,7 +131,7 @@ func (h *Handler) PostBundle(w http.ResponseWriter, r *http.Request) {
 		req.DeviceName = "Termimus Client"
 	}
 
-	newVersion, err := h.db.SaveRevision(req.DeviceID, req.DeviceName, req.EncryptedBlob)
+	newVersion, err := h.db.SaveRevision(req.DeviceID, req.DeviceName, blobStr)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save revision: "+err.Error())
 		return
