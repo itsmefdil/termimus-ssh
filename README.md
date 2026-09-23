@@ -1,99 +1,264 @@
-# Termimus
+<p align="center">
+  <img src="./logo.png" alt="Termimus Logo" width="120" height="120" />
+</p>
 
-Termimus is a self-hosted SSH & server management desktop app inspired by Termius. It's built with **Tauri v2 + Rust + React** for a lightweight, native, cross-platform experience.
+<h1 align="center">Termimus</h1>
 
-![Design](https://img.shields.io/badge/theme-Terminal%20Obsidian-00d2b4) ![Stack](https://img.shields.io/badge/stack-Tauri%20%2B%20Rust%20%2B%20React-blue)
+<p align="center">
+  <strong>The Local-First, Zero-Knowledge SSH Client & Server Management Suite</strong><br>
+  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.1.0</strong>
+</p>
 
-## Features
+<p align="center">
+  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.1.0-00d2b4.svg?style=flat&label=version" alt="Version v0.1.0" /></a>
+  <a href="https://github.com/itsmefdil/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen" alt="Platforms" />
+  <img src="https://img.shields.io/badge/encryption-AES--256--GCM-teal" alt="AES-256-GCM" />
+  <img src="https://img.shields.io/badge/kdf-Argon2id-purple" alt="Argon2id" />
+  <img src="https://img.shields.io/badge/theme-Terminal%20Obsidian-00d2b4" alt="Terminal Obsidian" />
+</p>
 
-- **SSH Terminal** — Multi-tab sessions powered by `russh` (pure Rust) and `xterm.js`, with persistent sessions that survive switching views (no reconnects, no htop/curses corruption).
-- **SFTP Browser** — Dual-pane file manager (local ↔ remote) with drag-free click-to-transfer, and an **in-app file editor** (open, edit, and save remote/local files directly, `Ctrl+S` to save).
-- **Port Forwarding / Tunnels** — Local port forwarding over SSH (`channel_open_direct_tcpip`), managed with start/stop toggles and live status.
-- **Snippets Library** — Save frequently used commands/scripts and run them instantly into the active terminal session.
-- **Host Groups / Folders** — Organize servers into collapsible groups.
-- **Live Ping / Latency Monitor** — Background TCP-connect probes show per-host latency and online/offline status.
-- **Zero-Knowledge Vault** — Master password protected; all secrets encrypted at rest with **AES-256-GCM**, keys derived via **Argon2id**.
-- **Known Hosts / MITM Protection** — Trust-On-First-Use host key fingerprinting (SHA256) with hard rejection on key mismatch, across SSH, SFTP, and tunnels.
-- **Encrypted Backup & Restore** — Export/import all hosts, folders, snippets, tunnels, and credentials (still ciphertext) as a single portable JSON file, with merge or full-replace modes.
-- **Frameless Termius-style UI** — Custom titlebar with integrated tabs, quick-connect (`Ctrl+K`), and a collapsible sidebar.
+<p align="center">
+  <img src="./docs/screenshots/hosts-overview.png" alt="Termimus Hosts Overview" width="850" />
+</p>
 
-## Tech Stack
+---
 
-**Frontend**
-- React 19 + TypeScript + Vite
-- Tailwind CSS v4 (Terminal Obsidian design system)
-- Zustand (state management)
-- `@xterm/xterm` + `@xterm/addon-fit`
+## ⚡ What is Termimus?
 
-**Backend (Rust / Tauri v2)**
-- `russh` + `russh-sftp` — async SSH/SFTP client
-- `rusqlite` — local SQLite storage
-- `aes-gcm` + `argon2` — vault encryption
-- `tokio` — async runtime
+**Termimus** is an open-source, desktop SSH manager and terminal suite designed for engineers, sysadmins, and DevOps teams who refuse to store production credentials in third-party proprietary clouds.
 
-## Project Structure
+Unlike SaaS alternatives that force cloud account registration, Termimus is **Local-First**: your database runs 100% offline via embedded SQLite, and your private keys and passwords never leave your machine unencrypted. When you need multi-device synchronization, Termimus connects to your own **Self-Hosted Go Sync Relay** using end-to-end zero-knowledge encryption — the server is a blind relay that cannot decrypt your data.
+
+---
+
+## ✨ Features at a Glance
+
+### 🖥️ Native Terminal Experience
+- **Async Rust SSH Engine**: Multi-tab terminal powered by `russh` and `@xterm/xterm` 6.
+- **Session Geometry Protection**: Background tabs stay mounted without collapsing to 0×0 geometry, preventing remote `htop`, `vim`, and curses TUIs from corrupting due to bogus SIGWINCH events.
+- **Quick Connect**: Instant fuzzy-search launcher accessible anywhere with `Ctrl+K`.
+
+### 📂 Dual-Pane SFTP & In-App Code Editor
+- **Seamless Transfers**: Dual-pane local ↔ remote browser with fast click-to-transfer navigation.
+- **Direct Remote Editor**: View and edit configuration files directly over SFTP with syntax highlighting and keyboard shortcut saving (`Ctrl+S`).
+
+### 🔑 Keychain & Identity Management
+- **Private Key Vault & Import**: Securely store and organize SSH private keys (OpenSSH, PEM, PuTTY). Import directly from local key files or paste PEM text.
+- **Instant Public Key Derivation**: Automatically derive OpenSSH public key lines (`ssh-ed25519`, `ssh-rsa`, `ecdsa`) and SHA256 fingerprints from imported private keys to paste into remote `authorized_keys`.
+- **Private Key Reveal & Copy**: Securely inspect or copy decrypted private keys on demand when the vault is unlocked, protected with privacy blur.
+- **Password Identities**: Store reusable username & password combinations to assign across multiple hosts without re-typing.
+
+### 🌐 Port Forwarding & SSH Tunnels
+- **Multi-Type Tunnels**: Support for Local (`-L`), Remote (`-R`), and Dynamic SOCKS5 (`-D`) port forwarding.
+- **Live Status Toggles**: Monitor and manage forwarding rules with real-time active indicators.
+
+### 📜 Snippets & Scripts
+- **Instant Script Runner**: Store frequently used shell scripts, deployment commands, and system diagnostics.
+- **Active Tab Injection**: Send snippets straight into your running terminal session with a single click.
+
+### 🔒 Enterprise-Grade Local Security
+- **Zero-Knowledge Vault**: All passwords and keys are encrypted at rest with **AES-256-GCM** using keys derived via **Argon2id**.
+- **OS Keyring Integration**: Optional silent auto-unlock on launch using your desktop's secure credential store (**KWallet / GNOME Secret Service** on Linux, **macOS Keychain**, or **Windows Credential Manager**).
+- **Configurable Auto-Lock**: Automatically lock the vault and zero out memory after 15m/1h of inactivity or on window focus loss.
+- **TOFU Host-Key Verification**: Trust-On-First-Use host key fingerprinting with hard rejection on key mismatch across SSH, SFTP, and tunnels to shield against Man-in-the-Middle (MITM) attacks.
+
+### ☁️ Self-Hosted Multi-Device Sync
+- **Zero-Knowledge Relay**: Self-host our ultra-lightweight Go sync server (`server/`) with Docker.
+- **Real-Time WebSocket Sync**: Connected devices receive instant push notifications when changes occur on another machine.
+- **Safe Merging**: Sync merges incoming updates without overwriting locally trusted server fingerprints.
+
+---
+
+## 🏛️ Architecture
 
 ```
-termimus/
-├── src/                          # React frontend
-│   ├── components/
-│   │   ├── layout/                # Header/titlebar, Sidebar, QuickConnectModal
-│   │   ├── hosts/                  # Host list, host/folder modals
-│   │   ├── terminal/                # XtermView, TabBar
-│   │   ├── sftp/                    # SftpView, FilePane, FileEditorModal
-│   │   ├── tunnels/                 # TunnelView, TunnelModal
-│   │   ├── snippets/                # SnippetView, SnippetModal
-│   │   └── vault/                   # VaultModal, VaultOverview, BackupRestoreSection
-│   ├── stores/                     # Zustand stores (one per domain)
-│   └── lib/                        # Tauri invoke wrappers, formatting helpers
-└── src-tauri/                    # Rust backend
-    └── src/
-        ├── ssh/                     # SSH session manager + host key verification
-        ├── sftp/                    # SFTP manager + local filesystem helpers
-        ├── tunnel/                  # Port forwarding manager
-        ├── vault/                   # AES-256-GCM / Argon2id crypto
-        ├── db/                      # SQLite schema, models, backup/restore
-        └── commands/                # Tauri command handlers
+┌─────────────────────────────────┐               ┌─────────────────────────────────┐
+│     Termimus (Work Laptop)      │               │      Termimus (Home Desktop)    │
+│  - Tauri v2 + Rust + React 19   │               │  - Tauri v2 + Rust + React 19   │
+│  - Local SQLite (termimus.db)   │               │  - Local SQLite (termimus.db)   │
+│  - AES-256-GCM Encryption Key   │               │  - AES-256-GCM Encryption Key   │
+└────────────────┬────────────────┘               └────────────────▲────────────────┘
+                 │                                                 │
+                 │   Push E2EE Ciphertext Bundle                   │   Pull & Auto-Merge
+                 │   (Server cannot read payload)                  │   (WebSocket Event)
+                 ▼                                                 │
+      ┌─────────────────────────────────────────────────────────────────┐
+      │             Termimus Sync Server (Go / Docker)                  │
+      │         ghcr.io/itsmefdil/termimus-sync:latest                  │
+      │                                                                 │
+      │  - Pure Go SQLite (modernc.org/sqlite, zero CGO)                │
+      │  - Blind Relay Storage (< 20MB RAM)                             │
+      │  - Real-time WebSocket Event Hub (`SYNC_UPDATED`)               │
+      └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Development
+### Component Versions
 
-### Prerequisites
+| Component | Version | Package |
+|---|---|---|
+| Desktop Client (Tauri + Rust + React) | `v0.1.0` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
+| Self-Hosted Sync Server (Go) | `v0.1.0` | [`ghcr.io/itsmefdil/termimus-sync`](https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync) |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Running Desktop App (Development)
+
+#### Prerequisites
 - [Rust](https://www.rust-lang.org/tools/install) (via `rustup`)
-- [Bun](https://bun.sh/) (or Node.js + npm)
-- Linux build dependencies:
+- [Bun](https://bun.sh/) (or Node.js 20+)
+- Linux system libraries:
   ```bash
   sudo apt install -y pkg-config build-essential \
     libwebkit2gtk-4.1-dev libssl-dev \
     libayatana-appindicator3-dev librsvg2-dev
   ```
 
-### Run in dev mode
+#### Start Desktop App
 ```bash
+# Clone the repository
+git clone https://github.com/itsmefdil/termimus-ssh.git
+cd termimus-ssh
+
+# Install frontend dependencies
 bun install
+
+# Run in Tauri dev mode
 bun run tauri dev
 ```
 
-### Build for production
+#### Build Release Package (Debian, AppImage, or Binary)
 ```bash
-bun run tauri build              # all configured bundle targets
-bun run tauri build --bundles deb  # Debian package only
+bun run tauri build
+```
+Compiled bundles will be located in `src-tauri/target/release/bundle/`.
+
+---
+
+### 2. Running Self-Hosted Sync Server
+
+The sync server is packaged as a lightweight, multi-architecture Docker container (`linux/amd64` and `linux/arm64`).
+
+#### Option A: Docker (Single Command)
+```bash
+docker run -d \
+  --name termimus-sync \
+  -p 8080:8080 \
+  -v termimus_data:/data \
+  -e TERMIMUS_AUTH_TOKEN="your-secure-random-token" \
+  --restart unless-stopped \
+  ghcr.io/itsmefdil/termimus-sync:latest
 ```
 
-The built package will be under `src-tauri/target/release/bundle/`.
-
-### Install the .deb (Linux)
+#### Option B: Docker Compose
+Create `docker-compose.yml`:
+```yaml
+services:
+  termimus-sync:
+    image: ghcr.io/itsmefdil/termimus-sync:latest
+    container_name: termimus-sync
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - PORT=8080
+      - DB_PATH=/data/sync.db
+      - TERMIMUS_AUTH_TOKEN=your-secure-random-token
+```
+Run with:
 ```bash
-sudo dpkg -i src-tauri/target/release/bundle/deb/Termimus_<version>_amd64.deb
+docker compose up -d
 ```
 
-## Data & Security
+#### Option C: Run from Source (Go)
+```bash
+cd server
+export TERMIMUS_AUTH_TOKEN="your-secure-random-token"
+export PORT="8080"
+go run ./cmd/server
+```
 
-- Local database: `~/.config/termimus/termimus.db`
-- All SSH passwords and private keys are encrypted with AES-256-GCM before being written to disk; the master password never leaves memory and is never stored.
-- Host key fingerprints (SHA256) are remembered on first connect and verified on every subsequent connection to protect against MITM attacks.
-- Use the **Key Vault** tab in-app to export an encrypted backup or restore one on a new machine.
+---
 
-## License
+## 🔐 Security & Cryptography Model
 
-Private project — no license specified.
+Termimus enforces defense-in-depth principles:
+
+| Domain | Mechanism | Implementation Detail |
+|---|---|---|
+| **Key Derivation** | Argon2id | 16-byte random salt, high-memory cost derivation for master password. |
+| **Data Encryption** | AES-256-GCM | Authenticated symmetric cipher with unique 12-byte nonces generated per item via OS RNG (`OsRng`). |
+| **Host Key Integrity** | TOFU / SHA-256 | Strict fingerprint validation on every connection; mismatches abort immediately to prevent MITM attacks. |
+| **Memory Hygiene** | Zeroization | Derived keys stored in memory are zeroized on vault lock using `zeroize`. |
+| **OS Keyring** | System Keyring | Derived key is securely delegated to KWallet, GNOME Secret Service, macOS Keychain, or Windows Credential Manager. |
+| **Blind Sync** | E2EE Envelope | Server accepts only version 2 encrypted bundles; zero plaintext leakage. |
+
+---
+
+## 📁 Repository Structure
+
+```
+termimus/
+├── src/                          # React 19 Frontend
+│   ├── components/
+│   │   ├── layout/               # Header, Sidebar, QuickConnect, ConfirmModal
+│   │   ├── hosts/                # Host management, folder tree, latency badges
+│   │   ├── terminal/             # Xterm.js terminal view & session tabs
+│   │   ├── sftp/                 # Dual-pane browser & remote code editor
+│   │   ├── keychain/             # KeyModal, IdentityModal, public key derivation
+│   │   ├── tunnels/              # Port forwarding manager
+│   │   ├── snippets/             # Scripts library
+│   │   ├── sync/                 # Self-hosted cloud sync manager
+│   │   ├── vault/                # Backup & restore components
+│   │   └── settings/             # Tabbed settings suite (full-width)
+│   ├── stores/                   # Zustand domain stores
+│   └── lib/                      # Tauri typed invoke wrappers
+│
+├── src-tauri/                    # Rust Backend (Tauri v2)
+│   └── src/
+│       ├── ssh/                  # Russh async client & TOFU verification
+│       ├── sftp/                 # Russh-sftp engine & local filesystem
+│       ├── tunnel/               # Channel direct TCP/IP forwarder
+│       ├── vault/                # AES-256-GCM & Argon2id encryption manager
+│       ├── sshkey/               # ED25519/RSA/ECDSA key generation & derivation
+│       ├── db/                   # SQLite schema, queries & backup engine
+│       └── commands/             # Tauri IPC command handlers
+│
+├── server/                       # Self-Hosted Sync Server (Go)
+│   ├── cmd/server/               # Server entrypoint
+│   ├── internal/                 # DB (pure Go SQLite), Hub (WebSockets), Handlers
+│   ├── Dockerfile                # Multi-stage minimal container
+│   ├── docker-compose.yml        # Production-ready compose configuration
+│   └── README.md                 # Server documentation
+│
+└── .github/workflows/            # GitHub Actions CI/CD (Multi-arch GHCR build)
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feat/amazing-feature`)
+3. Commit your Changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the Branch (`git push origin feat/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See [`LICENSE`](./LICENSE) for more information.
+
+---
+
+<p align="center">
+  Built with ❤️ for privacy-minded sysadmins and developers.
+</p>
