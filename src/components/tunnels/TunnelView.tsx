@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 import { TunnelModal } from "./TunnelModal";
 
 export function TunnelView() {
@@ -34,10 +35,16 @@ export function TunnelView() {
     refresh();
   }, [refresh]);
 
-  async function handleDelete(ruleId: string) {
-    if (confirm("Delete this port forwarding rule?")) {
-      await deleteRule(ruleId);
-    }
+  function handleDelete(ruleId: string, ruleLabel?: string) {
+    useConfirmStore.getState().confirm({
+      title: "Delete Port Forwarding Rule",
+      message: `Are you sure you want to delete ${ruleLabel ? `"${ruleLabel}"` : "this tunnel rule"}? This action cannot be undone.`,
+      confirmLabel: "Delete Rule",
+      isDanger: true,
+      onConfirm: async () => {
+        await deleteRule(ruleId);
+      },
+    });
   }
 
   return (
@@ -131,10 +138,10 @@ export function TunnelView() {
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => handleDelete(rule.id)}
+                        onClick={() => handleDelete(rule.id, rule.label)}
                         disabled={isActive}
                         title="Delete rule"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] disabled:opacity-30"
+                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] disabled:opacity-30 transition"
                       >
                         <Trash2 size={13} />
                       </button>

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 import { BackupRestoreSection } from "./BackupRestoreSection";
 
 export function VaultOverview() {
@@ -20,14 +21,16 @@ export function VaultOverview() {
     refresh();
   }, [refresh]);
 
-  async function handleReset(address: string, port: number) {
-    if (
-      confirm(
-        `Reset trusted key for ${address}:${port}? Termimus will accept the new key on your next connection.`
-      )
-    ) {
-      await resetKnownHost(address, port);
-    }
+  function handleReset(address: string, port: number) {
+    useConfirmStore.getState().confirm({
+      title: "Reset Trusted Host Key",
+      message: `Reset trusted host key for ${address}:${port}? Termimus will accept the server's new key on your next connection (Trust On First Use).`,
+      confirmLabel: "Reset Key",
+      isDanger: false,
+      onConfirm: async () => {
+        await resetKnownHost(address, port);
+      },
+    });
   }
 
   return (

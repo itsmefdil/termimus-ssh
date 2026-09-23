@@ -10,6 +10,7 @@ export interface Host {
   auth_method: "password" | "private_key" | "agent";
   credential_id?: string | null;
   tags: string[];
+  last_connected_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,9 +22,38 @@ export interface HostInput {
   port: number;
   username: string;
   auth_method: "password" | "private_key" | "agent";
+  credential_id?: string | null;
   secret?: string;
   passphrase?: string;
   tags: string[];
+}
+
+export interface KeychainItem {
+  id: string;
+  kind: "private_key" | "public_key" | "password";
+  name: string;
+  key_type: string;
+  public_key: string;
+  fingerprint: string;
+  username?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KeychainKeyInput {
+  name: string;
+  key_type: string;
+  private_key_pem: string;
+  public_key: string;
+  fingerprint: string;
+  passphrase?: string;
+  username?: string;
+}
+
+export interface KeychainIdentityInput {
+  name: string;
+  password: string;
+  username?: string;
 }
 
 export interface Folder {
@@ -99,6 +129,11 @@ export interface KnownHost {
   last_seen_at: string;
 }
 
+export interface GeneratedKeyPair {
+  private_key_pem: string;
+  public_key_openssh: string;
+}
+
 export interface ImportSummary {
   folders: number;
   credentials: number;
@@ -141,6 +176,23 @@ export const api = {
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   disconnectSsh: (sessionId: string) =>
     invoke<void>("ssh_disconnect", { sessionId }),
+
+  // SSH Key Utilities
+  generateKeyPair: (algorithm: string, comment: string = "") =>
+    invoke<GeneratedKeyPair>("key_generate", { algorithm, comment }),
+  derivePublicKey: (pem: string, passphrase?: string) =>
+    invoke<string>("key_derive_public", { pem, passphrase: passphrase || null }),
+
+  // Keychain (Termius-style saved keys & password identities)
+  listKeychain: () => invoke<KeychainItem[]>("keychain_list"),
+  saveKeychainKey: (input: KeychainKeyInput, itemId?: string) =>
+    invoke<KeychainItem>("keychain_save_key", { input, itemId: itemId ?? null }),
+  saveKeychainIdentity: (input: KeychainIdentityInput, itemId?: string) =>
+    invoke<KeychainItem>("keychain_save_identity", { input, itemId: itemId ?? null }),
+  deleteKeychainItem: (id: string) =>
+    invoke<void>("keychain_delete", { id }),
+  getKeychainPublicKey: (id: string) =>
+    invoke<string>("keychain_get_public_key", { id }),
 
   // SFTP Remote
   connectSftp: (hostId: string, sessionId: string) =>

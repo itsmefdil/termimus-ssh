@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 
 interface FilePaneProps {
   title: string;
@@ -54,11 +55,19 @@ export function FilePane({
     setIsCreatingFolder(false);
   }
 
-  async function handleDeleteClick(e: React.MouseEvent, entry: FileEntry) {
+  function handleDeleteClick(e: React.MouseEvent, entry: FileEntry) {
     e.stopPropagation();
-    if (confirm(`Delete ${entry.name}?`)) {
-      await onDeleteItem(entry);
-    }
+    useConfirmStore.getState().confirm({
+      title: entry.is_dir ? "Delete Folder" : "Delete File",
+      message: `Are you sure you want to delete "${entry.name}"${
+        entry.is_dir ? " and everything inside it" : ""
+      }? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      isDanger: true,
+      onConfirm: async () => {
+        await onDeleteItem(entry);
+      },
+    });
   }
 
   return (

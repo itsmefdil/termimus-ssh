@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, ImportSummary};
+use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, ImportSummary};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -114,37 +114,57 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
     let now = Utc::now().to_rfc3339();
     let id = host_id.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    let mut credential_id = None;
+    // A Keychain item was picked from the dropdown — link directly to it,
+    // no new anonymous credential needed.
+    let mut credential_id = input.credential_id;
 
-    if let Some(secret) = input.secret {
-        if !secret.trim().is_empty() {
-            if !state.vault.is_unlocked() {
-                return Err("Vault must be unlocked to save credentials".to_string());
-            }
-            let (ciphertext, nonce) = state.vault.encrypt(secret.as_bytes())?;
-            let (passphrase_ciphertext, passphrase_nonce) = match input.passphrase {
-                Some(p) if !p.trim().is_empty() => {
-                    let (ct, n) = state.vault.encrypt(p.as_bytes())?;
-                    (Some(ct), Some(n))
+    if credential_id.is_none() {
+        if let Some(secret) = input.secret {
+            if !secret.trim().is_empty() {
+                if !state.vault.is_unlocked() {
+                    return Err("Vault must be unlocked to save credentials".to_string());
                 }
-                _ => (None, None),
-            };
+                let (ciphertext, nonce) = state.vault.encrypt(secret.as_bytes())?;
+                let (passphrase_ciphertext, passphrase_nonce) = match input.passphrase {
+                    Some(p) if !p.trim().is_empty() => {
+                        let (ct, n) = state.vault.encrypt(p.as_bytes())?;
+                        (Some(ct), Some(n))
+                    }
+                    _ => (None, None),
+                };
 
-            let cred = Credential {
-                id: Uuid::new_v4().to_string(),
-                kind: input.auth_method.clone(),
-                ciphertext,
-                nonce,
-                passphrase_ciphertext,
-                passphrase_nonce,
-            };
-            state.db.save_credential(&cred).map_err(|e| e.to_string())?;
-            credential_id = Some(cred.id);
+                let cred = Credential {
+                    id: Uuid::new_v4().to_string(),
+                    kind: input.auth_method.clone(),
+                    ciphertext,
+                    nonce,
+                    passphrase_ciphertext,
+                    passphrase_nonce,
+                    // Anonymous one-off credential, not shown in the Keychain list.
+                    name: String::new(),
+                    key_type: String::new(),
+                    public_key: String::new(),
+                    fingerprint: String::new(),
+                    username: None,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                };
+                state.db.save_credential(&cred).map_err(|e| e.to_string())?;
+                credential_id = Some(cred.id);
+            }
         }
     }
 
     let existing = state.db.get_host(&id).map_err(|e| e.to_string())?;
-    let created_at = existing.map(|h| h.created_at).unwrap_or_else(|| now.clone());
+    let created_at = existing.as_ref().map(|h| h.created_at.clone()).unwrap_or_else(|| now.clone());
+
+    if credential_id.is_none() {
+        if let Some(h) = &existing {
+            credential_id = h.credential_id.clone();
+        }
+    }
+
+    let last_connected_at = existing.as_ref().and_then(|h| h.last_connected_at.clone());
 
     let host = Host {
         id,
@@ -156,6 +176,7 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
         auth_method: input.auth_method,
         credential_id,
         tags: input.tags,
+        last_connected_at,
         created_at,
         updated_at: now,
     };
@@ -214,8 +235,21 @@ fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
                     .get_credential(cred_id)
                     .map_err(|e| e.to_string())?
                     .ok_or_else(|| "Credential record not found".to_string())?;
+
+                if cred.kind == "public_key" {
+                    return Err(format!(
+                        "Keychain item '{}' is a Public Key only (starts with ssh-rsa/ssh-ed25519). SSH login requires your matching Private Key (which starts with '-----BEGIN ... PRIVATE KEY-----', e.g. from ~/.ssh/id_rsa or ~/.ssh/id_ed25519 without .pub).",
+                        cred.name
+                    ));
+                }
+
                 let pem_bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
                 let pem_str = String::from_utf8(pem_bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
+
+                if crate::sshkey::is_public_key_text(&pem_str) {
+                    return Err("The configured key is an OpenSSH Public Key (starts with ssh-rsa/ssh-ed25519). SSH client login requires the Private Key (starts with '-----BEGIN ... PRIVATE KEY-----'), not the public key.".to_string());
+                }
+
                 let pp = match (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
                     (Some(ct), Some(n)) => {
                         let bytes = state.vault.decrypt(ct, n)?;
@@ -250,7 +284,7 @@ pub async fn ssh_connect(
 
     let auth = resolve_host_auth(&state, &host)?;
 
-    state
+    let result = state
         .ssh
         .connect(
             app,
@@ -263,7 +297,13 @@ pub async fn ssh_connect(
             cols,
             rows,
         )
-        .await
+        .await;
+
+    if result.is_ok() {
+        let _ = state.db.touch_host_last_connected(&host_id);
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -291,6 +331,171 @@ pub async fn ssh_disconnect(
     session_id: String,
 ) -> Result<(), String> {
     state.ssh.disconnect(&session_id).await
+}
+
+// ================= SSH KEY COMMANDS =================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GeneratedKeyPairDto {
+    pub private_key_pem: String,
+    pub public_key_openssh: String,
+}
+
+/// Generates a brand new SSH key pair (Ed25519, RSA or ECDSA) for use as a
+/// host's private key. Returns both halves so the UI can show the public
+/// key immediately for copying onto the remote server; the private key is
+/// only persisted (encrypted) once the user saves the host.
+#[tauri::command]
+pub fn key_generate(algorithm: String, comment: String) -> Result<GeneratedKeyPairDto, String> {
+    let pair = crate::sshkey::generate_keypair(&algorithm, &comment)?;
+    Ok(GeneratedKeyPairDto {
+        private_key_pem: pair.private_key_pem,
+        public_key_openssh: pair.public_key_openssh,
+    })
+}
+
+/// Derives the OpenSSH public key line from a private key PEM the user
+/// pasted or imported, so it can be copied onto the remote server's
+/// `~/.ssh/authorized_keys` without ever needing the public key stored
+/// separately.
+#[tauri::command]
+pub fn key_derive_public(pem: String, passphrase: Option<String>) -> Result<String, String> {
+    crate::sshkey::derive_public_key(&pem, passphrase.as_deref())
+}
+
+// ================= KEYCHAIN COMMANDS =================
+//
+// The Keychain is a Termius-style library of reusable, named credentials
+// (SSH keys and password identities). A host's `credential_id` links to
+// one of these instead of every host owning its own copy — pick once,
+// reuse across every server.
+
+#[tauri::command]
+pub fn keychain_list(state: State<AppState>) -> Result<Vec<KeychainItem>, String> {
+    state
+        .db
+        .list_keychain_items()
+        .map_err(|e| e.to_string())
+}
+
+/// Saves (or updates, if `item_id` is given) a named SSH key in the Keychain.
+/// The algorithm badge, OpenSSH public key and fingerprint are re-derived
+/// server-side from the PEM so the UI never has to trust client-supplied values.
+#[tauri::command]
+pub fn keychain_save_key(
+    state: State<AppState>,
+    input: KeychainKeyInput,
+    item_id: Option<String>,
+) -> Result<KeychainItem, String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault must be unlocked to save Keychain items".to_string());
+    }
+    if input.name.trim().is_empty() {
+        return Err("Key name is required".to_string());
+    }
+
+    let details = crate::sshkey::inspect_key(&input.private_key_pem, input.passphrase.as_deref())?;
+
+    let kind = if details.is_public_key_only {
+        "public_key".to_string()
+    } else {
+        "private_key".to_string()
+    };
+
+    let (ciphertext, nonce) = state.vault.encrypt(input.private_key_pem.as_bytes())?;
+    let (passphrase_ciphertext, passphrase_nonce) = match &input.passphrase {
+        Some(p) if !p.trim().is_empty() => {
+            let (ct, n) = state.vault.encrypt(p.as_bytes())?;
+            (Some(ct), Some(n))
+        }
+        _ => (None, None),
+    };
+
+    let now = Utc::now().to_rfc3339();
+    let id = item_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let existing = state.db.get_credential(&id).map_err(|e| e.to_string())?;
+    let created_at = existing.map(|c| c.created_at).unwrap_or_else(|| now.clone());
+
+    let cred = Credential {
+        id,
+        kind,
+        ciphertext,
+        nonce,
+        passphrase_ciphertext,
+        passphrase_nonce,
+        name: input.name.trim().to_string(),
+        key_type: details.algorithm,
+        public_key: details.public_key,
+        fingerprint: details.fingerprint,
+        username: input.username.filter(|u| !u.trim().is_empty()),
+        created_at,
+        updated_at: now,
+    };
+    state.db.save_credential(&cred).map_err(|e| e.to_string())?;
+    Ok(KeychainItem::from(&cred))
+}
+
+/// Saves (or updates, if `item_id` is given) a named password identity in the Keychain.
+#[tauri::command]
+pub fn keychain_save_identity(
+    state: State<AppState>,
+    input: KeychainIdentityInput,
+    item_id: Option<String>,
+) -> Result<KeychainItem, String> {
+    if !state.vault.is_unlocked() {
+        return Err("Vault must be unlocked to save Keychain items".to_string());
+    }
+    if input.name.trim().is_empty() {
+        return Err("Identity name is required".to_string());
+    }
+    if input.password.is_empty() {
+        return Err("Password is required".to_string());
+    }
+
+    let (ciphertext, nonce) = state.vault.encrypt(input.password.as_bytes())?;
+
+    let now = Utc::now().to_rfc3339();
+    let id = item_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let existing = state.db.get_credential(&id).map_err(|e| e.to_string())?;
+    let created_at = existing.map(|c| c.created_at).unwrap_or_else(|| now.clone());
+
+    let cred = Credential {
+        id,
+        kind: "password".to_string(),
+        ciphertext,
+        nonce,
+        passphrase_ciphertext: None,
+        passphrase_nonce: None,
+        name: input.name.trim().to_string(),
+        key_type: String::new(),
+        public_key: String::new(),
+        fingerprint: String::new(),
+        username: input.username.filter(|u| !u.trim().is_empty()),
+        created_at,
+        updated_at: now,
+    };
+    state.db.save_credential(&cred).map_err(|e| e.to_string())?;
+    Ok(KeychainItem::from(&cred))
+}
+
+#[tauri::command]
+pub fn keychain_delete(state: State<AppState>, id: String) -> Result<(), String> {
+    state.db.delete_credential(&id).map_err(|e| e.to_string())
+}
+
+/// Returns the OpenSSH public key for a stored Keychain SSH key, so it can
+/// be copied without re-deriving it from ciphertext on every render.
+#[tauri::command]
+pub fn keychain_get_public_key(state: State<AppState>, id: String) -> Result<String, String> {
+    let cred = state
+        .db
+        .get_credential(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Keychain item not found".to_string())?;
+    if cred.public_key.is_empty() {
+        return Err("This Keychain item has no public key".to_string());
+    }
+    Ok(cred.public_key)
 }
 
 // ================= SFTP COMMANDS =================

@@ -2,6 +2,7 @@ pub mod commands;
 pub mod db;
 pub mod sftp;
 pub mod ssh;
+pub mod sshkey;
 pub mod tunnel;
 pub mod vault;
 
@@ -25,6 +26,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::vault_status,
@@ -41,6 +43,13 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::key_generate,
+            commands::key_derive_public,
+            commands::keychain_list,
+            commands::keychain_save_key,
+            commands::keychain_save_identity,
+            commands::keychain_delete,
+            commands::keychain_get_public_key,
             commands::sftp_connect,
             commands::sftp_list,
             commands::sftp_mkdir,

@@ -13,6 +13,9 @@ import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
 import { VaultOverview } from "./components/vault/VaultOverview";
+import { KeychainView } from "./components/keychain/KeychainView";
+import { ConfirmModal } from "./components/layout/ConfirmModal";
+import { useKeychainStore } from "./stores/useKeychainStore";
 
 // Below this window width, the sidebar auto-collapses to give the main
 // content area enough room (independent of the user's manual toggle).
@@ -33,6 +36,7 @@ function App() {
 
   const { isUnlocked, refresh: refreshVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
+  const { refresh: refreshKeychain } = useKeychainStore();
   const { tabs, activeTabId } = useSessionStore();
 
   useEffect(() => {
@@ -42,8 +46,9 @@ function App() {
   useEffect(() => {
     if (isUnlocked) {
       refreshHosts();
+      refreshKeychain();
     }
-  }, [isUnlocked, refreshHosts]);
+  }, [isUnlocked, refreshHosts, refreshKeychain]);
 
   useEffect(() => {
     try {
@@ -134,6 +139,8 @@ function App() {
 
           {activeNav === "sftp" && <SftpView />}
 
+          {activeNav === "keychain" && <KeychainView />}
+
           {activeNav === "tunnels" && <TunnelView />}
 
           {activeNav === "snippets" && <SnippetView />}
@@ -147,6 +154,9 @@ function App() {
 
       {/* Host Create/Edit Modal */}
       <HostModal />
+
+      {/* App-wide Delete & Action Confirmation Modal */}
+      <ConfirmModal />
     </div>
   );
 }

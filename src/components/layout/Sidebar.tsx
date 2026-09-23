@@ -14,8 +14,9 @@ import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
+import { useKeychainStore } from "../../stores/useKeychainStore";
 
-export type ActiveTab = "hosts" | "terminal" | "sftp" | "tunnels" | "vault" | "snippets";
+export type ActiveTab = "hosts" | "terminal" | "sftp" | "keychain" | "tunnels" | "snippets" | "vault";
 
 interface SidebarProps {
   activeNav: ActiveTab;
@@ -34,6 +35,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
   const { tabs } = useSessionStore();
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
+  const { items: keychainItems } = useKeychainStore();
 
   const navItems: {
     icon: typeof Server;
@@ -43,11 +45,12 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
     badgeDot?: boolean;
   }[] = [
     { icon: Server, label: "Hosts", id: "hosts", badge: hosts.length || undefined },
+    { icon: KeyRound, label: "Keychain", id: "keychain", badge: keychainItems.length || undefined },
     { icon: Terminal, label: "Terminal Sessions", id: "terminal", badge: tabs.length || undefined },
     { icon: FolderOpen, label: "SFTP Browser", id: "sftp" },
     { icon: Braces, label: "Snippets & Scripts", id: "snippets", badge: snippets.length || undefined },
     { icon: Waypoints, label: "Port Forwarding", id: "tunnels", badgeDot: activeRuleIds.size > 0 },
-    { icon: KeyRound, label: "Key Vault", id: "vault" },
+    { icon: Lock, label: "Security & Backup", id: "vault" },
   ];
 
   return (

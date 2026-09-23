@@ -1,9 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useHostStore } from "../../stores/useHostStore";
+import { ConnectionProgress, ConnectionLog } from "./ConnectionProgress";
 
 interface XtermViewProps {
   sessionId: string;
@@ -11,13 +13,63 @@ interface XtermViewProps {
   visible: boolean;
 }
 
+interface SshProgressEvent {
+  step: number;
+  step_name: string;
+  message: string;
+  timestamp: string;
+  is_error: boolean;
+}
+
 export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
+  // Guards against React StrictMode's dev-mode double-effect-invocation firing
+  // connectSsh twice for the same session, which would open two real SSH
+  // connections that both stream the shell's MOTD/banner into the same
+  // terminal — the exact "double output on login" symptom. Refs survive
+  // StrictMode's mount→cleanup→remount simulation, so this stays true across it.
+  const hasConnectedRef = useRef(false);
+
   const setConnected = useSessionStore((s) => s.setSessionConnected);
   const setError = useSessionStore((s) => s.setSessionError);
+  const closeSession = useSessionStore((s) => s.closeSession);
+  const host = useHostStore((s) => s.hosts.find((h) => h.id === hostId));
+
+  const [logs, setLogs] = useState<ConnectionLog[]>([]);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const startConnection = useCallback((cols: number, rows: number) => {
+    setConnectionError(null);
+    setIsConnected(false);
+    setCurrentStep(1);
+    setLogs([
+      {
+        step: 1,
+        message: `Initiating connection to ${host?.address || "server"}...`,
+        timestamp: new Date().toISOString(),
+        isError: false,
+      },
+    ]);
+
+    api
+      .connectSsh(hostId, sessionId, cols, rows)
+      .then(() => {
+        setIsConnected(true);
+        setConnected(sessionId, true);
+        setConnectionError(null);
+      })
+      .catch((e) => {
+        const errStr = String(e);
+        setConnectionError(errStr);
+        setError(sessionId, errStr);
+        termRef.current?.write(`\r\n\x1b[31mFailed to connect: ${errStr}\x1b[0m\r\n`);
+      });
+  }, [hostId, sessionId, host, setConnected, setError]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -85,7 +137,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       api.writeSsh(sessionId, bytes).catch((e) => console.error("ssh_write failed:", e));
     });
 
-    // Listen for backend -> frontend data stream
+    // Listen for backend -> frontend data stream & progress events
     const unlistenPromises = [
       listen<number[]>(`ssh-data-${sessionId}`, (event) => {
         const bytes = new Uint8Array(event.payload);
@@ -93,18 +145,32 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       }),
       listen<string>(`ssh-closed-${sessionId}`, () => {
         setConnected(sessionId, false);
+        setIsConnected(false);
         term.write("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n");
+      }),
+      listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
+        const p = event.payload;
+        setCurrentStep(p.step);
+        setLogs((prev) => [
+          ...prev,
+          {
+            step: p.step,
+            message: p.message,
+            timestamp: p.timestamp,
+            isError: p.is_error,
+          },
+        ]);
+        if (p.is_error) {
+          setConnectionError(p.message);
+        }
       }),
     ];
 
-    // Kick off the actual SSH connection with verified initial geometry
-    api
-      .connectSsh(hostId, sessionId, initialCols, initialRows)
-      .then(() => setConnected(sessionId, true))
-      .catch((e) => {
-        setError(sessionId, String(e));
-        term.write(`\r\n\x1b[31mFailed to connect: ${String(e)}\x1b[0m\r\n`);
-      });
+    // Kick off connection once (guarded against duplicate mount triggers)
+    if (!hasConnectedRef.current) {
+      hasConnectedRef.current = true;
+      startConnection(initialCols, initialRows);
+    }
 
     // Resizing logic with strict dimension guarding
     const handleResize = () => {
@@ -112,8 +178,6 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       const width = containerRef.current.clientWidth;
       const height = containerRef.current.clientHeight;
 
-      // CRITICAL: If container is hidden or collapsed, DO NOT fit and DO NOT send resize!
-      // Sending near-zero dimensions breaks curses/htop layout on the remote PTY.
       if (width < 100 || height < 100) return;
 
       try {
@@ -183,15 +247,36 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     return () => clearTimeout(timer);
   }, [visible, sessionId]);
 
+  const handleRetry = () => {
+    const cols = lastSizeRef.current.cols || 80;
+    const rows = lastSizeRef.current.rows || 24;
+    startConnection(cols, rows);
+  };
+
   return (
     <div
-      ref={containerRef}
-      className="absolute inset-0 p-2"
+      className="absolute inset-0"
       style={{
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 10 : 0,
       }}
-    />
+    >
+      {/* Terminal Viewport */}
+      <div ref={containerRef} className="absolute inset-0 p-2" />
+
+      {/* Termius-Style Connection Progress & Process Tree Overlay */}
+      {(!isConnected || connectionError) && (
+        <ConnectionProgress
+          sessionId={sessionId}
+          host={host}
+          logs={logs}
+          currentStep={currentStep}
+          error={connectionError}
+          onRetry={handleRetry}
+          onClose={() => closeSession(sessionId)}
+        />
+      )}
+    </div>
   );
 }

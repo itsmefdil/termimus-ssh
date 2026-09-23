@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary};
+use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -47,7 +47,14 @@ impl Database {
                 ciphertext BLOB NOT NULL,
                 nonce BLOB NOT NULL,
                 passphrase_ciphertext BLOB,
-                passphrase_nonce BLOB
+                passphrase_nonce BLOB,
+                name TEXT NOT NULL DEFAULT '',
+                key_type TEXT NOT NULL DEFAULT '',
+                public_key TEXT NOT NULL DEFAULT '',
+                fingerprint TEXT NOT NULL DEFAULT '',
+                username TEXT,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS hosts (
@@ -60,6 +67,7 @@ impl Database {
                 auth_method TEXT NOT NULL,
                 credential_id TEXT,
                 tags TEXT NOT NULL DEFAULT '[]',
+                last_connected_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL,
@@ -100,13 +108,23 @@ impl Database {
             ",
         )?;
 
+        // Ensure columns added in Keychain update exist on existing databases
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN name TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN key_type TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN public_key TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN username TEXT", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN created_at TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE credentials ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE hosts ADD COLUMN last_connected_at TEXT", []);
+
         Ok(())
     }
 
     pub fn list_hosts(&self) -> Result<Vec<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, created_at, updated_at FROM hosts ORDER BY label ASC"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at FROM hosts ORDER BY label ASC"
         )?;
 
         let hosts = stmt.query_map([], |row| {
@@ -122,8 +140,9 @@ impl Database {
                 auth_method: row.get(6)?,
                 credential_id: row.get(7)?,
                 tags,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                last_connected_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -133,7 +152,7 @@ impl Database {
     pub fn get_host(&self, id: &str) -> Result<Option<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, created_at, updated_at FROM hosts WHERE id = ?1"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at FROM hosts WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query(params![id])?;
@@ -150,8 +169,9 @@ impl Database {
                 auth_method: row.get(6)?,
                 credential_id: row.get(7)?,
                 tags,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                last_connected_at: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             }))
         } else {
             Ok(None)
@@ -163,8 +183,8 @@ impl Database {
         let tags_str = serde_json::to_string(&host.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
-            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 folder_id=excluded.folder_id,
                 label=excluded.label,
@@ -185,6 +205,7 @@ impl Database {
                 host.auth_method,
                 host.credential_id,
                 tags_str,
+                host.last_connected_at,
                 host.created_at,
                 host.updated_at,
             ],
@@ -199,17 +220,33 @@ impl Database {
         Ok(())
     }
 
+    pub fn touch_host_last_connected(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE hosts SET last_connected_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
     pub fn save_credential(&self, cred: &Credential) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO credentials (id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO credentials (id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 kind=excluded.kind,
                 ciphertext=excluded.ciphertext,
                 nonce=excluded.nonce,
                 passphrase_ciphertext=excluded.passphrase_ciphertext,
-                passphrase_nonce=excluded.passphrase_nonce",
+                passphrase_nonce=excluded.passphrase_nonce,
+                name=excluded.name,
+                key_type=excluded.key_type,
+                public_key=excluded.public_key,
+                fingerprint=excluded.fingerprint,
+                username=excluded.username,
+                updated_at=excluded.updated_at",
             params![
                 cred.id,
                 cred.kind,
@@ -217,6 +254,13 @@ impl Database {
                 cred.nonce,
                 cred.passphrase_ciphertext,
                 cred.passphrase_nonce,
+                cred.name,
+                cred.key_type,
+                cred.public_key,
+                cred.fingerprint,
+                cred.username,
+                cred.created_at,
+                cred.updated_at,
             ],
         )?;
         Ok(())
@@ -225,7 +269,7 @@ impl Database {
     pub fn get_credential(&self, id: &str) -> Result<Option<Credential>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce FROM credentials WHERE id = ?1"
+            "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at FROM credentials WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query(params![id])?;
@@ -237,6 +281,13 @@ impl Database {
                 nonce: row.get(3)?,
                 passphrase_ciphertext: row.get(4)?,
                 passphrase_nonce: row.get(5)?,
+                name: row.get(6)?,
+                key_type: row.get(7)?,
+                public_key: row.get(8)?,
+                fingerprint: row.get(9)?,
+                username: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             }))
         } else {
             Ok(None)
@@ -246,7 +297,7 @@ impl Database {
     pub fn list_credentials(&self) -> Result<Vec<Credential>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce FROM credentials"
+            "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at FROM credentials ORDER BY name ASC"
         )?;
         let list = stmt.query_map([], |row| {
             Ok(Credential {
@@ -256,9 +307,51 @@ impl Database {
                 nonce: row.get(3)?,
                 passphrase_ciphertext: row.get(4)?,
                 passphrase_nonce: row.get(5)?,
+                name: row.get(6)?,
+                key_type: row.get(7)?,
+                public_key: row.get(8)?,
+                fingerprint: row.get(9)?,
+                username: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(list)
+    }
+
+    pub fn delete_credential(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM credentials WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Returns all named Keychain entries (omits old unlabelled anonymous credentials
+    /// that were auto-created per host without names).
+    pub fn list_keychain_items(&self) -> Result<Vec<KeychainItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, name, key_type, public_key, fingerprint, username, created_at, updated_at
+             FROM credentials
+             WHERE name != ''
+             ORDER BY name ASC",
+        )?;
+        let items = stmt
+            .query_map([], |row| {
+                Ok(KeychainItem {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    name: row.get(2)?,
+                    key_type: row.get(3)?,
+                    public_key: row.get(4)?,
+                    fingerprint: row.get(5)?,
+                    username: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(items)
     }
 
     pub fn list_folders(&self) -> Result<Vec<Folder>> {

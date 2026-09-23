@@ -12,7 +12,6 @@ interface HostState {
 
   isFolderModalOpen: boolean;
   editingFolder: Folder | null;
-  collapsedFolderIds: Set<string>;
 
   refresh: () => Promise<void>;
   saveHost: (input: HostInput, hostId?: string) => Promise<void>;
@@ -20,7 +19,6 @@ interface HostState {
 
   saveFolder: (name: string, parentId?: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
-  toggleFolderCollapse: (folderId: string) => void;
 
   setSelectedTag: (tag: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -44,7 +42,6 @@ export const useHostStore = create<HostState>((set, get) => ({
 
   isFolderModalOpen: false,
   editingFolder: null,
-  collapsedFolderIds: new Set(),
 
   refresh: async () => {
     set({ isLoading: true });
@@ -78,18 +75,6 @@ export const useHostStore = create<HostState>((set, get) => ({
   deleteFolder: async (id: string) => {
     await api.deleteFolder(id);
     await get().refresh();
-  },
-
-  toggleFolderCollapse: (folderId: string) => {
-    set((state) => {
-      const next = new Set(state.collapsedFolderIds);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
-      return { collapsedFolderIds: next };
-    });
   },
 
   setSelectedTag: (tag) => set({ selectedTag: tag }),

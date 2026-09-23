@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 import { SnippetModal } from "./SnippetModal";
 
 export function SnippetView() {
@@ -53,10 +54,16 @@ export function SnippetView() {
     setTimeout(() => setRunFeedback(null), 2000);
   }
 
-  async function handleDelete(id: string) {
-    if (confirm("Delete this snippet?")) {
-      await deleteSnippet(id);
-    }
+  function handleDelete(id: string, snippetTitle?: string) {
+    useConfirmStore.getState().confirm({
+      title: "Delete Snippet",
+      message: `Are you sure you want to delete ${snippetTitle ? `"${snippetTitle}"` : "this snippet"}? This action cannot be undone.`,
+      confirmLabel: "Delete Snippet",
+      isDanger: true,
+      onConfirm: async () => {
+        await deleteSnippet(id);
+      },
+    });
   }
 
   return (
@@ -159,9 +166,9 @@ export function SnippetView() {
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => handleDelete(snippet.id)}
+                        onClick={() => handleDelete(snippet.id, snippet.title)}
                         title="Delete snippet"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)]"
+                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition"
                       >
                         <Trash2 size={13} />
                       </button>

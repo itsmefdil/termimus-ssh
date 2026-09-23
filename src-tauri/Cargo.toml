@@ -35,6 +35,7 @@ dirs = "6"
 zeroize = { version = "1", features = ["derive"] }
 russh-sftp = "3.0.0"
 anyhow = "1.0.104"
+tauri-plugin-dialog = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

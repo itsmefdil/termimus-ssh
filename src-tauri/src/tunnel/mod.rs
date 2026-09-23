@@ -1,5 +1,5 @@
 use russh::client::{self, Handle};
-use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
+use russh::keys::decode_secret_key;
 use russh::ChannelMsg;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -77,11 +77,7 @@ impl TunnelManager {
             SshAuth::PrivateKey { pem, passphrase } => {
                 let key_pair = decode_secret_key(&pem, passphrase.as_deref())
                     .map_err(|e| format!("Invalid private key: {e}"))?;
-                let key = PrivateKeyWithHashAlg::new(Arc::new(key_pair), None);
-                handle
-                    .authenticate_publickey(&username, key)
-                    .await
-                    .map_err(|e| format!("Auth error: {e}"))?
+                crate::ssh::authenticate_publickey_smart(&mut handle, &username, key_pair).await?
             }
         };
 

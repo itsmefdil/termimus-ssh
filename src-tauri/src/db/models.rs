@@ -45,6 +45,7 @@ pub struct Host {
     pub auth_method: String,
     pub credential_id: Option<String>,
     pub tags: Vec<String>,
+    pub last_connected_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -60,19 +61,88 @@ pub struct HostInput {
     pub port: u16,
     pub username: String,
     pub auth_method: String,
+    pub credential_id: Option<String>,
     pub secret: Option<String>,
     pub passphrase: Option<String>,
     pub tags: Vec<String>,
 }
 
+/// A Keychain entry: a named, reusable credential (SSH private key or
+/// password identity) that can be linked from any number of hosts via
+/// `Host.credential_id`, instead of every host holding its own copy.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Credential {
     pub id: String,
+    /// "private_key" or "password" — what kind of secret this holds.
     pub kind: String,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub passphrase_ciphertext: Option<Vec<u8>>,
     pub passphrase_nonce: Option<Vec<u8>>,
+    /// Display name in the Keychain UI, e.g. "fadil", "ai-care", "ClickHost".
+    pub name: String,
+    /// Algorithm badge for private keys, e.g. "ED25519", "RSA", "ECDSA-P256". Empty for identities.
+    pub key_type: String,
+    /// Derived OpenSSH public key line, stored in plaintext for instant listing/copying
+    /// without needing the vault unlocked. Empty for password identities.
+    pub public_key: String,
+    /// SHA256 fingerprint of the public key, e.g. "SHA256:...". Empty for password identities.
+    pub fingerprint: String,
+    /// Optional default username to prefill when this item is picked in the host form.
+    pub username: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Lightweight, secret-free view of a `Credential` for listing in the
+/// Keychain UI and the host-form dropdown — never carries ciphertext.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeychainItem {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub key_type: String,
+    pub public_key: String,
+    pub fingerprint: String,
+    pub username: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<&Credential> for KeychainItem {
+    fn from(c: &Credential) -> Self {
+        KeychainItem {
+            id: c.id.clone(),
+            kind: c.kind.clone(),
+            name: c.name.clone(),
+            key_type: c.key_type.clone(),
+            public_key: c.public_key.clone(),
+            fingerprint: c.fingerprint.clone(),
+            username: c.username.clone(),
+            created_at: c.created_at.clone(),
+            updated_at: c.updated_at.clone(),
+        }
+    }
+}
+
+/// Payload used to create/update a Keychain SSH key entry from the frontend.
+#[derive(Debug, Clone, Deserialize)]
+pub struct KeychainKeyInput {
+    pub name: String,
+    pub key_type: String,
+    pub private_key_pem: String,
+    pub public_key: String,
+    pub fingerprint: String,
+    pub passphrase: Option<String>,
+    pub username: Option<String>,
+}
+
+/// Payload used to create/update a Keychain password identity from the frontend.
+#[derive(Debug, Clone, Deserialize)]
+pub struct KeychainIdentityInput {
+    pub name: String,
+    pub password: String,
+    pub username: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
