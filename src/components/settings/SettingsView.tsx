@@ -18,8 +18,10 @@ import {
   Shield,
   Cpu,
   Layers,
+  Cloud,
 } from "lucide-react";
 import { BackupRestoreSection } from "../vault/BackupRestoreSection";
+import { SyncSection } from "../sync/SyncSection";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -30,7 +32,7 @@ import {
 } from "../../stores/useSettingsStore";
 import { api } from "../../lib/api";
 
-type SettingsTab = "security" | "known_hosts" | "backup" | "about";
+type SettingsTab = "security" | "sync" | "known_hosts" | "backup" | "about";
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("security");
@@ -43,6 +45,7 @@ export function SettingsView() {
     badge?: number;
   }[] = [
     { id: "security", label: "Security & Vault", icon: Lock },
+    { id: "sync", label: "Self-Hosted Sync", icon: Cloud },
     {
       id: "known_hosts",
       label: "Trusted Host Keys",
@@ -105,6 +108,7 @@ export function SettingsView() {
         {/* ── Tab Content Panels ──────────────────────────────────────────── */}
         <div className="pt-1">
           {activeTab === "security" && <SecurityVaultTab />}
+          {activeTab === "sync" && <SyncSection />}
           {activeTab === "known_hosts" && <KnownHostsTab />}
           {activeTab === "backup" && <BackupRestoreSection />}
           {activeTab === "about" && <AboutTab />}

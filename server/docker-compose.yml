@@ -1,0 +1,21 @@
+services:
+  termimus-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: termimus-sync-server:latest
+    container_name: termimus-sync
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - termimus_sync_data:/data
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+      - DB_PATH=/data/sync.db
+      - TERMIMUS_AUTH_TOKEN=change-this-to-a-secure-random-token
+
+volumes:
+  termimus_sync_data:
+    driver: local
