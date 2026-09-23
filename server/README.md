@@ -22,7 +22,7 @@ docker run -d \
   -v termimus_data:/data \
   -e TERMIMUS_AUTH_TOKEN="your-secure-random-secret-token" \
   --restart unless-stopped \
-  termimus-sync-server:latest
+  ghcr.io/itsmefdil/termimus-sync:latest
 ```
 
 ### Option 2: Docker Compose

@@ -156,7 +156,7 @@ export function SyncSection() {
   -v termimus_data:/data \\
   -e TERMIMUS_AUTH_TOKEN="your-secret-token" \\
   --restart unless-stopped \\
-  termimus-sync-server:latest`;
+  ghcr.io/itsmefdil/termimus-sync:latest`;
 
   return (
     <div className="space-y-5">
