@@ -6,11 +6,11 @@
 
 <p align="center">
   <strong>The Local-First, Zero-Knowledge SSH Client & Server Management Suite</strong><br>
-  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.2.0</strong>
+  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.2.1</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.2.0-00d2b4.svg?style=flat&label=version" alt="Version v0.2.0" /></a>
+  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.2.1-00d2b4.svg?style=flat&label=version" alt="Version v0.2.1" /></a>
   <a href="https://github.com/itsmefdil/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen" alt="Platforms" />
@@ -114,7 +114,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 | Component | Version | Package |
 |---|---|---|
-| Desktop Client (Tauri + Rust + React) | `v0.2.0` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
+| Desktop Client (Tauri + Rust + React) | `v0.2.1` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
 | Self-Hosted Sync Server (Go) | `v0.1.2` | [`ghcr.io/itsmefdil/termimus-sync`](https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync) |
 
 ---

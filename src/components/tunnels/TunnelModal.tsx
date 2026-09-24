@@ -76,32 +76,32 @@ export function TunnelModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 select-none">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
           <div className="flex items-center gap-2">
-            <ArrowLeftRight size={18} className="text-[var(--accent)]" />
+            <ArrowLeftRight size={18} className="text-[var(--primary)]" />
             <h2 className="text-base font-semibold text-[var(--text-primary)]">
               {editingRule ? "Edit Port Forwarding" : "New Port Forwarding"}
             </h2>
           </div>
           <button
             onClick={closeModal}
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-white transition-colors"
           >
             <X size={18} />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
+          <div className="mb-4 rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2.5 text-xs text-[var(--danger)]">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="mb-1 block font-medium text-[var(--text-muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
               Rule Name / Label *
             </label>
             <input
@@ -110,18 +110,18 @@ export function TunnelModal() {
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. Postgres DB, Redis, Grafana"
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--accent)] focus:outline-none"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none transition-colors"
             />
           </div>
 
           <div>
-            <label className="mb-1 block font-medium text-[var(--text-muted)]">
+            <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
               SSH Host *
             </label>
             <select
               value={hostId}
               onChange={(e) => setHostId(e.target.value)}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
             >
               <option value="">Select SSH server...</option>
               {hosts.map((h) => (
@@ -132,7 +132,7 @@ export function TunnelModal() {
             </select>
           </div>
 
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]/60 p-3 space-y-3">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
             <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
               Local Endpoint (Your Computer)
             </div>
@@ -146,7 +146,7 @@ export function TunnelModal() {
                   value={localAddress}
                   onChange={(e) => setLocalAddress(e.target.value)}
                   placeholder="127.0.0.1"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                 />
               </div>
               <div>
@@ -158,13 +158,13 @@ export function TunnelModal() {
                   required
                   value={localPort}
                   onChange={(e) => setLocalPort(Number(e.target.value))}
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                 />
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--background)]/60 p-3 space-y-3">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
             <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
               Destination Endpoint (Target Network)
             </div>
@@ -179,7 +179,7 @@ export function TunnelModal() {
                   value={remoteAddress}
                   onChange={(e) => setRemoteAddress(e.target.value)}
                   placeholder="127.0.0.1 or db.internal"
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                 />
               </div>
               <div>
@@ -191,7 +191,7 @@ export function TunnelModal() {
                   required
                   value={remotePort}
                   onChange={(e) => setRemotePort(Number(e.target.value))}
-                  className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -201,14 +201,14 @@ export function TunnelModal() {
             <button
               type="button"
               onClick={closeModal}
-              className="rounded-md px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-high)] px-4 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+              className="rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm disabled:opacity-50"
             >
               {submitting ? "Saving..." : editingRule ? "Update Rule" : "Create Rule"}
             </button>

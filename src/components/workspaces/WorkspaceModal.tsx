@@ -265,7 +265,7 @@ export function WorkspaceModal() {
                     <select
                       value={selectedHostIds[idx] || ""}
                       onChange={(e) => handleSelectHostForPane(idx, e.target.value)}
-                      className="w-full rounded-xl border border-[var(--border)] bg-[var(--canvas)] px-3 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
                     >
                       {hosts.length === 0 ? (
                         <option value="">No hosts available — add a host first</option>

@@ -284,7 +284,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                 <select
                   value={folderId}
                   onChange={(e) => setFolderId(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
                 >
                   <option value="">No group (Ungrouped)</option>
                   {folders.map((f) => (
@@ -409,7 +409,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                       <select
                         value={selectedCredentialId}
                         onChange={(e) => handleSelectCredential(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
                       >
                         <option value="">-- Custom one-off password --</option>
                         {availableIdentities.map((item) => (
@@ -467,7 +467,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                     <select
                       value={selectedCredentialId}
                       onChange={(e) => handleSelectCredential(e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
                     >
                       <option value="">
                         {availableKeys.length > 0

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Archive,
   Lock,
@@ -37,6 +37,7 @@ type SettingsTab = "security" | "sync" | "known_hosts" | "backup" | "about";
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("security");
   const { knownHosts } = useKnownHostsStore();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const tabs: {
     id: SettingsTab;
@@ -57,63 +58,84 @@ export function SettingsView() {
   ];
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5">
-      <div className="flex flex-col w-full space-y-5">
-
-        {/* ── Top Header ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Settings</h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Manage your local security vault, trusted hosts, backup bundles, and application preferences.
-            </p>
+    <div className="flex h-full w-full flex-col bg-[var(--canvas)] select-none overflow-hidden">
+      {/* ── Fixed Top Header & Navigation ─────────────────────────────────── */}
+      <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface-container)]/30 px-6 pt-5 pb-4 backdrop-blur-xs">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)] tracking-tight">Settings</h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Manage your local security vault, trusted hosts, backup bundles, and application preferences.
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* ── Navigation Tabs ─────────────────────────────────────────────── */}
-        <div className="flex items-center gap-1 border-b border-[var(--border)]">
-          {tabs.map(({ id, label, icon: Icon, badge }) => {
-            const active = activeTab === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium transition-all border-b-2 -mb-px rounded-t-lg ${
-                  active
-                    ? "border-[var(--primary)] text-[var(--primary)] bg-[var(--surface-container)]/40 font-semibold shadow-xs"
-                    : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/20"
-                }`}
-              >
-                <Icon
-                  size={15}
-                  className={active ? "text-[var(--primary)]" : "text-[var(--text-muted)]"}
-                />
-                <span>{label}</span>
-                {badge !== undefined && (
-                  <span
-                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+          {/* ── Native Segmented Tab Control ──────────────────────────────── */}
+          <div className="flex items-center overflow-x-auto py-0.5">
+            <nav
+              role="tablist"
+              aria-label="Settings sections"
+              className="inline-flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] shrink-0"
+            >
+              {tabs.map(({ id, label, icon: Icon, badge }) => {
+                const active = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={active}
+                    type="button"
+                    onClick={() => {
+                      if (activeTab !== id) {
+                        setActiveTab(id);
+                        scrollContainerRef.current?.scrollTo({ top: 0, behavior: "instant" });
+                      }
+                    }}
+                    className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer select-none transition-colors duration-150 border ${
                       active
-                        ? "bg-[var(--primary)]/20 text-[var(--primary)]"
-                        : "bg-[var(--surface-high)] text-[var(--text-muted)]"
+                        ? "bg-[var(--surface-high)] text-[var(--text-primary)] shadow-xs border-[var(--border-subtle)]"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/60 border-transparent"
                     }`}
                   >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                    <Icon
+                      size={14}
+                      className={`shrink-0 transition-colors duration-150 ${
+                        active ? "text-[var(--primary)]" : "text-[var(--text-muted)]"
+                      }`}
+                    />
+                    <span className="whitespace-nowrap">{label}</span>
+                    {badge !== undefined && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono leading-none transition-colors duration-150 ${
+                          active
+                            ? "bg-[var(--primary)]/20 text-[var(--primary)] font-semibold"
+                            : "bg-[var(--surface-highest)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         </div>
+      </div>
 
-        {/* ── Tab Content Panels ──────────────────────────────────────────── */}
-        <div className="pt-1">
+      {/* ── Scrollable Tab Content ────────────────────────────────────────── */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto px-6 py-5 [scrollbar-gutter:stable]"
+      >
+        <div className="w-full">
           {activeTab === "security" && <SecurityVaultTab />}
           {activeTab === "sync" && <SyncSection />}
           {activeTab === "known_hosts" && <KnownHostsTab />}
           {activeTab === "backup" && <BackupRestoreSection />}
           {activeTab === "about" && <AboutTab />}
         </div>
-
       </div>
     </div>
   );
@@ -286,7 +308,7 @@ function SecurityVaultTab() {
             <select
               value={autoLockPolicy}
               onChange={(e) => setAutoLockPolicy(e.target.value as AutoLockPolicy)}
-              className="rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none shrink-0"
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer shrink-0"
             >
               {(Object.keys(AUTO_LOCK_LABELS) as AutoLockPolicy[]).map((key) => (
                 <option key={key} value={key}>
@@ -466,7 +488,7 @@ function AboutTab() {
             <div className="flex items-center gap-2.5">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">Termimus</h3>
               <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30">
-                v0.2.0
+                v0.2.1
               </span>
             </div>
             <p className="text-xs text-[var(--text-secondary)]">

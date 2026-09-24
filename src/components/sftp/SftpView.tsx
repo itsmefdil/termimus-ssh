@@ -69,7 +69,7 @@ export function SftpView() {
               if (host) connectRemote(host);
             }}
             disabled={remoteLoading || transferring}
-            className="rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-xs text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer disabled:opacity-50"
           >
             <option value="">Select a host to connect...</option>
             {hosts.map((h) => (
