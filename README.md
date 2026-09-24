@@ -51,10 +51,16 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 ### 🖥️ Native Terminal Experience
 - **Async Rust SSH Engine**: Multi-tab terminal powered by `russh` and `@xterm/xterm` 6.
-- **Split Panes & Multi-Terminal Workspace**: Split terminals in any direction with resizable dividers, tab drag-and-drop, and auto-grouping tabs (`Web Server (2)`).
+- **Split Panes & Dynamic Layouts**: Split terminals in any direction with resizable dividers, tab drag-and-drop, and auto-grouping tabs (`Web Server (2)`).
 - **Terminal Interconnection & Input Broadcast**: One-click synchronized input across all split panes (`SYNC` toggle / `Alt+B`) to broadcast keystrokes and run commands simultaneously across multiple servers.
 - **Session Geometry Protection**: Background tabs stay mounted without collapsing to 0×0 geometry, preventing remote `htop`, `vim`, and curses TUIs from corrupting due to bogus SIGWINCH events.
 - **Quick Connect**: Instant fuzzy-search launcher accessible anywhere with `Ctrl+K`.
+
+### 🗂️ Workspaces & Multi-Server Cluster Launcher
+- **Multi-Server Layout Presets**: Design and save complex multi-terminal split layouts (Single, Vertical 2-way, Horizontal 2-way, 3-way, 4-way Grid, 6-way Matrix) with assigned hosts for each pane.
+- **1-Click Cluster Launcher**: Atomic multi-session launcher connects to all target machines simultaneously and arranges them into their pre-configured split panes with zero layout jitter.
+- **Interactive Blueprint Designer**: Visual layout designer to preview blueprints, assign hosts to panes, and customize workspace tags and colors.
+- **Save Active Split as Preset**: Snapshot your current live split layout and open SSH sessions into a reusable workspace preset with a single click.
 
 ### 📂 Dual-Pane SFTP & In-App Code Editor
 - **Seamless Transfers**: Dual-pane local ↔ remote browser with fast click-to-transfer navigation.
@@ -225,6 +231,7 @@ termimus/
 │   │   ├── layout/               # Header, Sidebar, QuickConnect, ConfirmModal
 │   │   ├── hosts/                # Host management, folder tree, latency badges
 │   │   ├── terminal/             # Xterm.js terminal view & session tabs
+│   │   ├── workspaces/           # Multi-server layout presets & cluster launcher
 │   │   ├── sftp/                 # Dual-pane browser & remote code editor
 │   │   ├── keychain/             # KeyModal, IdentityModal, public key derivation
 │   │   ├── tunnels/              # Port forwarding manager
