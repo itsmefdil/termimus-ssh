@@ -122,7 +122,7 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
       />
 
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="flex h-9 w-full select-none items-center bg-[var(--canvas)] border-b border-[var(--border)]"
       >
         {/* Brand Logo & Sidebar Toggle Button */}
@@ -134,6 +134,7 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
             className="h-5 w-5 rounded object-contain pointer-events-none"
           />
           <button
+            data-tauri-drag-region="false"
             onClick={onToggleSidebar}
             title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
@@ -150,8 +151,8 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
 
         {/* Tabs Row (Each tab represents a Workspace / Split Screen Group) */}
         <div
-          data-tauri-drag-region="false"
-          className="flex h-full flex-1 items-center gap-1 overflow-x-auto px-1"
+          data-tauri-drag-region
+          className="flex h-full max-w-[calc(100%-180px)] shrink-0 items-center gap-1 overflow-x-auto px-1"
         >
           {groups.map((group) => {
             const sessionIds = getAllSessionIdsInTree(group.rootPane);
@@ -175,6 +176,7 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
             return (
               <div
                 key={group.id}
+                data-tauri-drag-region="false"
                 onClick={() => {
                   setActiveGroup(group.id);
                   onSelectTab?.();
@@ -235,6 +237,7 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
 
           {/* Plus '+' Button: Clean & Seamless */}
           <button
+            data-tauri-drag-region="false"
             onClick={() => setIsQuickConnectOpen(true)}
             title="New connection / Quick connect (Ctrl+K)"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--primary)] transition-colors"
@@ -244,10 +247,10 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
         </div>
 
         {/* Drag region filler */}
-        <div data-tauri-drag-region className="h-full flex-1" />
+        <div data-tauri-drag-region className="h-full flex-1 cursor-default" />
 
         {/* Window Controls */}
-        <div className="flex h-full items-stretch shrink-0">
+        <div data-tauri-drag-region="false" className="flex h-full items-stretch shrink-0">
           <button
             onClick={handleMinimize}
             title="Minimize"
