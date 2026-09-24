@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { useVaultStore } from "./stores/useVaultStore";
 import { useHostStore } from "./stores/useHostStore";
 import { useSessionStore } from "./stores/useSessionStore";
@@ -42,6 +44,14 @@ function App() {
 
   // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
   useAutoLock();
+
+  // Enforce small minimum window size (480x360) so users can snap/tile to half screen
+  // on sub-1080p displays (e.g. 1366x768 half is 683px, 1280x800 half is 640px).
+  useEffect(() => {
+    getCurrentWindow()
+      .setMinSize(new LogicalSize(480, 360))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     refreshVault();
