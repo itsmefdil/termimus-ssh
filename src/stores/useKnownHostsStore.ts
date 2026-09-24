@@ -16,7 +16,9 @@ export const useKnownHostsStore = create<KnownHostsState>((set, get) => ({
   error: null,
 
   refresh: async () => {
-    set({ isLoading: true, error: null });
+    if (get().knownHosts.length === 0) {
+      set({ isLoading: true, error: null });
+    }
     try {
       const knownHosts = await api.listKnownHosts();
       set({ knownHosts, isLoading: false });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, memo } from "react";
 import {
   Terminal,
   Plus,
@@ -14,6 +14,7 @@ import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { SnippetModal } from "./SnippetModal";
+import { Snippet } from "../../lib/api";
 
 export function SnippetView() {
   const {
@@ -31,8 +32,11 @@ export function SnippetView() {
   const [runFeedback, setRunFeedback] = useState<{ id: string; ok: boolean } | null>(null);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    // Only refresh if snippets empty; otherwise preloaded on unlock
+    if (snippets.length === 0) {
+      refresh();
+    }
+  }, [snippets.length, refresh]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const hasActiveTerminal = Boolean(activeTab?.connected);
@@ -48,26 +52,32 @@ export function SnippetView() {
     );
   }, [snippets, searchQuery]);
 
-  async function handleRun(snippetId: string, command: string) {
-    const ok = await sendTextToActiveSession(command);
-    setRunFeedback({ id: snippetId, ok });
-    setTimeout(() => setRunFeedback(null), 2000);
-  }
+  const handleRun = useCallback(
+    async (snippetId: string, command: string) => {
+      const ok = await sendTextToActiveSession(command);
+      setRunFeedback({ id: snippetId, ok });
+      setTimeout(() => setRunFeedback((prev) => (prev?.id === snippetId ? null : prev)), 2000);
+    },
+    [sendTextToActiveSession]
+  );
 
-  function handleDelete(id: string, snippetTitle?: string) {
-    useConfirmStore.getState().confirm({
-      title: "Delete Snippet",
-      message: `Are you sure you want to delete ${snippetTitle ? `"${snippetTitle}"` : "this snippet"}? This action cannot be undone.`,
-      confirmLabel: "Delete Snippet",
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteSnippet(id);
-      },
-    });
-  }
+  const handleDelete = useCallback(
+    (id: string, snippetTitle?: string) => {
+      useConfirmStore.getState().confirm({
+        title: "Delete Snippet",
+        message: `Are you sure you want to delete ${snippetTitle ? `"${snippetTitle}"` : "this snippet"}? This action cannot be undone.`,
+        confirmLabel: "Delete Snippet",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteSnippet(id);
+        },
+      });
+    },
+    [deleteSnippet]
+  );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--background)] p-4">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none">
       <SnippetModal />
 
       {/* Header */}
@@ -146,79 +156,107 @@ export function SnippetView() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredSnippets.map((snippet) => {
-              const feedback = runFeedback?.id === snippet.id ? runFeedback : null;
-              return (
-                <div
-                  key={snippet.id}
-                  className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors"
-                >
-                  <div className="flex min-w-0 items-center justify-between mb-2">
-                    <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)] pr-2">
-                      {snippet.title}
-                    </h3>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => openEditModal(snippet)}
-                        title="Edit snippet"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(snippet.id, snippet.title)}
-                        title="Delete snippet"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <pre className="mb-3 max-h-24 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-all">
-                    {snippet.command}
-                  </pre>
-
-                  {snippet.tags.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-1">
-                      {snippet.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-[var(--background)] border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => handleRun(snippet.id, snippet.command)}
-                    disabled={!hasActiveTerminal}
-                    className={`mt-auto flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition ${
-                      feedback?.ok
-                        ? "bg-[var(--success)]/15 text-[var(--success)]"
-                        : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
-                    } disabled:opacity-40`}
-                  >
-                    {feedback?.ok ? (
-                      <>
-                        <CheckCircle2 size={13} />
-                        <span>Sent to terminal</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play size={12} />
-                        <span>Run in Active Terminal</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
+            {filteredSnippets.map((snippet) => (
+              <SnippetCard
+                key={snippet.id}
+                snippet={snippet}
+                hasActiveTerminal={hasActiveTerminal}
+                isRunSuccess={runFeedback?.id === snippet.id && runFeedback.ok}
+                onRun={handleRun}
+                onEdit={openEditModal}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         )}
       </div>
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED SNIPPET CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface SnippetCardProps {
+  snippet: Snippet;
+  hasActiveTerminal: boolean;
+  isRunSuccess: boolean;
+  onRun: (id: string, command: string) => void;
+  onEdit: (snippet: Snippet) => void;
+  onDelete: (id: string, title?: string) => void;
+}
+
+const SnippetCard = memo(function SnippetCard({
+  snippet,
+  hasActiveTerminal,
+  isRunSuccess,
+  onRun,
+  onEdit,
+  onDelete,
+}: SnippetCardProps) {
+  return (
+    <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors shadow-xs">
+      <div className="flex min-w-0 items-center justify-between mb-2">
+        <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)] pr-2">
+          {snippet.title}
+        </h3>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => onEdit(snippet)}
+            title="Edit snippet"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={() => onDelete(snippet.id, snippet.title)}
+            title="Delete snippet"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      <pre className="mb-3 max-h-24 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-all">
+        {snippet.command}
+      </pre>
+
+      {snippet.tags.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          {snippet.tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-[var(--background)] border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <button
+        onClick={() => onRun(snippet.id, snippet.command)}
+        disabled={!hasActiveTerminal}
+        className={`mt-auto flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition ${
+          isRunSuccess
+            ? "bg-[var(--success)]/15 text-[var(--success)]"
+            : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+        } disabled:opacity-40`}
+      >
+        {isRunSuccess ? (
+          <>
+            <CheckCircle2 size={13} />
+            <span>Sent to terminal</span>
+          </>
+        ) : (
+          <>
+            <Play size={12} />
+            <span>Run in Active Terminal</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+});

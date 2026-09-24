@@ -44,7 +44,10 @@ export const useHostStore = create<HostState>((set, get) => ({
   editingFolder: null,
 
   refresh: async () => {
-    set({ isLoading: true });
+    // Only flash isLoading when we have no cached data to show
+    if (get().hosts.length === 0 && get().folders.length === 0) {
+      set({ isLoading: true });
+    }
     try {
       const [hosts, folders] = await Promise.all([
         api.listHosts(),

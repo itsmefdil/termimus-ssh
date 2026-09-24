@@ -24,7 +24,9 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   editingSnippet: null,
 
   refresh: async () => {
-    set({ isLoading: true, error: null });
+    if (get().snippets.length === 0) {
+      set({ isLoading: true, error: null });
+    }
     try {
       const snippets = await api.listSnippets();
       set({ snippets, isLoading: false });

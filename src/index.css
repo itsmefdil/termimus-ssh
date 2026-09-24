@@ -90,4 +90,9 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #3b424e;
   }
+
+  .gpu-layer {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
 }

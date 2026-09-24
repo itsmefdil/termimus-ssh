@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { useVaultStore } from "./stores/useVaultStore";
 import { useHostStore } from "./stores/useHostStore";
 import { useSessionStore } from "./stores/useSessionStore";
+import { useSnippetStore } from "./stores/useSnippetStore";
+import { useTunnelStore } from "./stores/useTunnelStore";
 import { Sidebar, ActiveTab } from "./components/layout/Sidebar";
 import { Header } from "./components/layout/Header";
 import { ResizeHandles } from "./components/layout/ResizeHandles";
@@ -20,12 +22,31 @@ import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
 import { useAutoLock } from "./hooks/useAutoLock";
 
+// Helper component for native-feel stacked views:
+// Keeps views mounted in the DOM once visited, switching visibility in 0ms
+// with zero unmount cost, zero redundant IPC fetches, and perfect scroll/input preservation.
+function PageView({ active, children }: { active: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className="absolute inset-0 flex flex-col overflow-hidden"
+      style={{
+        visibility: active ? "visible" : "hidden",
+        pointerEvents: active ? "auto" : "none",
+        zIndex: active ? 5 : 0,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 // Below this window width, the sidebar auto-collapses to give the main
 // content area enough room (independent of the user's manual toggle).
 const AUTO_COLLAPSE_WIDTH = 820;
 
 function App() {
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
+  const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["hosts"]));
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem("termimus_sidebar_collapsed") === "true";
@@ -41,6 +62,16 @@ function App() {
   const { refresh: refreshHosts } = useHostStore();
   const { refresh: refreshKeychain } = useKeychainStore();
   const { activeTabId, activeGroupId } = useSessionStore();
+
+  const handleNavChange = useCallback((tab: ActiveTab) => {
+    setActiveNav(tab);
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, []);
 
   // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
   useAutoLock();
@@ -59,8 +90,12 @@ function App() {
 
   useEffect(() => {
     if (isUnlocked) {
+      // Preload all domain data in parallel on unlock so sidebar badges and tabs
+      // are instantly available with zero spinner delay.
       refreshHosts();
       refreshKeychain();
+      useSnippetStore.getState().refresh();
+      useTunnelStore.getState().refresh();
     }
   }, [isUnlocked, refreshHosts, refreshKeychain]);
 
@@ -85,9 +120,9 @@ function App() {
   // When a new tab/group is opened, automatically switch to the terminal view
   useEffect(() => {
     if (activeGroupId || activeTabId) {
-      setActiveNav("terminal");
+      handleNavChange("terminal");
     }
-  }, [activeGroupId, activeTabId]);
+  }, [activeGroupId, activeTabId, handleNavChange]);
 
   const showTerminal = activeNav === "terminal";
 
@@ -98,7 +133,7 @@ function App() {
 
       {/* Top Unified Frameless Window Bar (Termius-style: Menu + Tabs + Window Controls) */}
       <Header
-        onSelectTab={() => setActiveNav("terminal")}
+        onSelectTab={() => handleNavChange("terminal")}
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
         isSidebarCollapsed={isSidebarCollapsed}
       />
@@ -109,7 +144,7 @@ function App() {
             or automatically once the window is too narrow to fit it comfortably. */}
         <Sidebar
           activeNav={activeNav}
-          onNavChange={setActiveNav}
+          onNavChange={handleNavChange}
           isCollapsed={isSidebarCollapsed || isNarrowWindow}
         />
 
@@ -119,22 +154,48 @@ function App() {
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
           <TerminalWorkspace visible={showTerminal} />
 
-          {activeNav === "hosts" && (
-            <HostList
-              onOpenSftp={() => setActiveNav("sftp")}
-              onOpenTunnels={() => setActiveNav("tunnels")}
-            />
+          {/* Lazy-mounted Native-Grade Keep-Alive Views:
+              Each view is mounted on first visit and preserved across tab switches.
+              Switches happen in 0ms (1 frame), scroll positions are remembered,
+              and inputs/folder drill-downs stay intact. */}
+          {visitedTabs.has("hosts") && (
+            <PageView active={activeNav === "hosts"}>
+              <HostList
+                onOpenSftp={() => handleNavChange("sftp")}
+                onOpenTunnels={() => handleNavChange("tunnels")}
+              />
+            </PageView>
           )}
 
-          {activeNav === "sftp" && <SftpView />}
+          {visitedTabs.has("sftp") && (
+            <PageView active={activeNav === "sftp"}>
+              <SftpView />
+            </PageView>
+          )}
 
-          {activeNav === "keychain" && <KeychainView />}
+          {visitedTabs.has("keychain") && (
+            <PageView active={activeNav === "keychain"}>
+              <KeychainView />
+            </PageView>
+          )}
 
-          {activeNav === "tunnels" && <TunnelView />}
+          {visitedTabs.has("tunnels") && (
+            <PageView active={activeNav === "tunnels"}>
+              <TunnelView />
+            </PageView>
+          )}
 
-          {activeNav === "snippets" && <SnippetView />}
+          {visitedTabs.has("snippets") && (
+            <PageView active={activeNav === "snippets"}>
+              <SnippetView />
+            </PageView>
+          )}
 
-          {activeNav === "settings" && <SettingsView />}
+          {visitedTabs.has("settings") && (
+            <PageView active={activeNav === "settings"}>
+              <SettingsView />
+            </PageView>
+          )}
         </main>
       </div>
 
@@ -142,7 +203,7 @@ function App() {
       <VaultModal />
 
       {/* Host Create/Edit Modal */}
-      <HostModal onOpenKeychain={() => setActiveNav("keychain")} />
+      <HostModal onOpenKeychain={() => handleNavChange("keychain")} />
 
       {/* App-wide Delete & Action Confirmation Modal */}
       <ConfirmModal />

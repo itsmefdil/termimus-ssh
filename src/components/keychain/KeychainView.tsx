@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import {
   KeyRound,
   Plus,
@@ -21,7 +21,6 @@ export function KeychainView() {
     items,
     isLoading,
     searchQuery,
-    refresh,
     setSearchQuery,
     openCreateKeyModal,
     openEditKeyModal,
@@ -32,48 +31,52 @@ export function KeychainView() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
   const query = searchQuery.trim().toLowerCase();
-  const filtered = items.filter((item) => {
-    if (!query) return true;
-    return (
-      item.name.toLowerCase().includes(query) ||
-      item.key_type.toLowerCase().includes(query) ||
-      (item.username ?? "").toLowerCase().includes(query)
-    );
-  });
 
-  const keys = filtered.filter((i) => i.kind === "private_key" || i.kind === "public_key");
-  const identities = filtered.filter((i) => i.kind === "password");
+  const { keys, identities } = useMemo(() => {
+    const filtered = items.filter((item) => {
+      if (!query) return true;
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.key_type.toLowerCase().includes(query) ||
+        (item.username ?? "").toLowerCase().includes(query)
+      );
+    });
 
-  async function handleCopyPublicKey(item: KeychainItem) {
+    return {
+      keys: filtered.filter((i) => i.kind === "private_key" || i.kind === "public_key"),
+      identities: filtered.filter((i) => i.kind === "password"),
+    };
+  }, [items, query]);
+
+  const handleCopyPublicKey = useCallback(async (item: KeychainItem) => {
     if (!item.public_key) return;
     try {
       await navigator.clipboard.writeText(item.public_key);
       setCopiedId(item.id);
-      setTimeout(() => setCopiedId(null), 2000);
+      setTimeout(() => setCopiedId((prev) => (prev === item.id ? null : prev)), 2000);
     } catch (err) {
       console.error("Failed to copy public key:", err);
     }
-  }
+  }, []);
 
-  function handleDelete(item: KeychainItem) {
-    useConfirmStore.getState().confirm({
-      title: item.kind === "password" ? "Delete Identity" : "Delete Key",
-      message: `Are you sure you want to delete "${item.name}" from your Keychain? Any hosts using this credential will need a new one assigned. This action cannot be undone.`,
-      confirmLabel: "Delete",
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteItem(item.id);
-      },
-    });
-  }
+  const handleDelete = useCallback(
+    (item: KeychainItem) => {
+      useConfirmStore.getState().confirm({
+        title: item.kind === "password" ? "Delete Identity" : "Delete Key",
+        message: `Are you sure you want to delete "${item.name}" from your Keychain? Any hosts using this credential will need a new one assigned. This action cannot be undone.`,
+        confirmLabel: "Delete",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteItem(item.id);
+        },
+      });
+    },
+    [deleteItem]
+  );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto p-5">
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5 select-none">
       {/* Header */}
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2.5">
@@ -158,69 +161,14 @@ export function KeychainView() {
             ) : (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {keys.map((item) => (
-                  <div
+                  <KeyCard
                     key={item.id}
-                    className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition hover:border-[var(--primary)]/40"
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--secondary)]/15 text-[var(--secondary)]">
-                        <Key size={16} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-                            {item.name}
-                          </p>
-                          {item.kind === "public_key" && (
-                            <span className="rounded bg-[var(--surface-high)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--secondary)] border border-[var(--secondary)]/30">
-                              PUB
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[var(--text-muted)]">
-                          Type {item.key_type || "Unknown"}
-                          {item.username && ` · ${item.username}`}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--border)] pt-2.5">
-                      <button
-                        onClick={() => handleCopyPublicKey(item)}
-                        disabled={!item.public_key}
-                        title="Copy public key"
-                        className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium transition disabled:opacity-40 ${
-                          copiedId === item.id
-                            ? "bg-[var(--success)] text-black font-semibold"
-                            : "bg-[var(--surface-high)] text-[var(--text-primary)] hover:bg-[var(--surface-highest)]"
-                        }`}
-                      >
-                        {copiedId === item.id ? (
-                          <>
-                            <Check size={11} /> Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={11} /> Copy Key
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => openEditKeyModal(item)}
-                        title="Edit"
-                        className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)]"
-                      >
-                        <Pencil size={12} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item)}
-                        title="Delete"
-                        className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
+                    item={item}
+                    isCopied={copiedId === item.id}
+                    onCopy={handleCopyPublicKey}
+                    onEdit={openEditKeyModal}
+                    onDelete={handleDelete}
+                  />
                 ))}
               </div>
             )}
@@ -238,42 +186,12 @@ export function KeychainView() {
             ) : (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {identities.map((item) => (
-                  <div
+                  <IdentityCard
                     key={item.id}
-                    className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition hover:border-[var(--primary)]/40"
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--tertiary)]/15 text-[var(--tertiary)]">
-                        <UserCheck size={16} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-[var(--text-primary)]">
-                          {item.name}
-                        </p>
-                        <p className="text-[11px] text-[var(--text-muted)]">
-                          Auth password
-                          {item.username && ` · ${item.username}`}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--border)] pt-2.5">
-                      <button
-                        onClick={() => openEditIdentityModal(item)}
-                        title="Edit"
-                        className="flex flex-1 items-center justify-center gap-1 rounded-md bg-[var(--surface-high)] py-1.5 text-[11px] font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-highest)]"
-                      >
-                        <Pencil size={11} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item)}
-                        title="Delete"
-                        className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  </div>
+                    item={item}
+                    onEdit={openEditIdentityModal}
+                    onDelete={handleDelete}
+                  />
                 ))}
               </div>
             )}
@@ -281,8 +199,144 @@ export function KeychainView() {
         </>
       )}
 
+      {/* Modals */}
       <KeyModal />
       <IdentityModal />
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED KEY CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface KeyCardProps {
+  item: KeychainItem;
+  isCopied: boolean;
+  onCopy: (item: KeychainItem) => void;
+  onEdit: (item: KeychainItem) => void;
+  onDelete: (item: KeychainItem) => void;
+}
+
+const KeyCard = memo(function KeyCard({
+  item,
+  isCopied,
+  onCopy,
+  onEdit,
+  onDelete,
+}: KeyCardProps) {
+  return (
+    <div className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs">
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--secondary)]/15 text-[var(--secondary)]">
+          <Key size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+              {item.name}
+            </p>
+            {item.kind === "public_key" && (
+              <span className="rounded bg-[var(--surface-high)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--secondary)] border border-[var(--secondary)]/30">
+                PUB
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Type {item.key_type || "Unknown"}
+            {item.username && ` · ${item.username}`}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--border)] pt-2.5">
+        <button
+          onClick={() => onCopy(item)}
+          disabled={!item.public_key}
+          title="Copy public key"
+          className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+            isCopied
+              ? "bg-[var(--success)] text-black font-semibold"
+              : "bg-[var(--surface-high)] text-[var(--text-primary)] hover:bg-[var(--surface-highest)]"
+          }`}
+        >
+          {isCopied ? (
+            <>
+              <Check size={11} /> Copied
+            </>
+          ) : (
+            <>
+              <Copy size={11} /> Copy Key
+            </>
+          )}
+        </button>
+        <button
+          onClick={() => onEdit(item)}
+          title="Edit"
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)]"
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          onClick={() => onDelete(item)}
+          title="Delete"
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED IDENTITY CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface IdentityCardProps {
+  item: KeychainItem;
+  onEdit: (item: KeychainItem) => void;
+  onDelete: (item: KeychainItem) => void;
+}
+
+const IdentityCard = memo(function IdentityCard({
+  item,
+  onEdit,
+  onDelete,
+}: IdentityCardProps) {
+  return (
+    <div className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs">
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--tertiary)]/15 text-[var(--tertiary)]">
+          <UserCheck size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+            {item.name}
+          </p>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Auth password
+            {item.username && ` · ${item.username}`}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-[var(--border)] pt-2.5">
+        <button
+          onClick={() => onEdit(item)}
+          title="Edit"
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)]"
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          onClick={() => onDelete(item)}
+          title="Delete"
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+});

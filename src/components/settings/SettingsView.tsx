@@ -341,8 +341,10 @@ function KnownHostsTab() {
   const { knownHosts, isLoading, refresh, resetKnownHost } = useKnownHostsStore();
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (knownHosts.length === 0) {
+      refresh();
+    }
+  }, [knownHosts.length, refresh]);
 
   function handleReset(address: string, port: number) {
     useConfirmStore.getState().confirm({
@@ -464,7 +466,7 @@ function AboutTab() {
             <div className="flex items-center gap-2.5">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">Termimus</h3>
               <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30">
-                v0.1.0
+                v0.1.5
               </span>
             </div>
             <p className="text-xs text-[var(--text-secondary)]">

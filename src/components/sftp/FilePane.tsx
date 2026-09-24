@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import {
   Folder,
   File,
@@ -55,20 +55,34 @@ export function FilePane({
     setIsCreatingFolder(false);
   }
 
-  function handleDeleteClick(e: React.MouseEvent, entry: FileEntry) {
-    e.stopPropagation();
-    useConfirmStore.getState().confirm({
-      title: entry.is_dir ? "Delete Folder" : "Delete File",
-      message: `Are you sure you want to delete "${entry.name}"${
-        entry.is_dir ? " and everything inside it" : ""
-      }? This action cannot be undone.`,
-      confirmLabel: "Delete",
-      isDanger: true,
-      onConfirm: async () => {
-        await onDeleteItem(entry);
-      },
-    });
-  }
+  const handleDeleteClick = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      e.stopPropagation();
+      useConfirmStore.getState().confirm({
+        title: entry.is_dir ? "Delete Folder" : "Delete File",
+        message: `Are you sure you want to delete "${entry.name}"${
+          entry.is_dir ? " and everything inside it" : ""
+        }? This action cannot be undone.`,
+        confirmLabel: "Delete",
+        isDanger: true,
+        onConfirm: async () => {
+          await onDeleteItem(entry);
+        },
+      });
+    },
+    [onDeleteItem]
+  );
+
+  const handleRowDoubleClick = useCallback(
+    (entry: FileEntry) => {
+      if (entry.is_dir) {
+        onNavigate(entry.path);
+      } else {
+        onOpenFile?.(entry);
+      }
+    },
+    [onNavigate, onOpenFile]
+  );
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]">
@@ -173,71 +187,17 @@ export function FilePane({
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => {
-                const isSelected = selectedFile?.path === entry.path;
-                return (
-                  <tr
-                    key={entry.path}
-                    onClick={() => onSelect(entry)}
-                    onDoubleClick={() => {
-                      if (entry.is_dir) {
-                        onNavigate(entry.path);
-                      } else {
-                        onOpenFile?.(entry);
-                      }
-                    }}
-                    className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
-                      isSelected
-                        ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"
-                        : "hover:bg-[var(--card)] text-[var(--text-primary)]"
-                    }`}
-                  >
-                    <td className="py-1.5 pl-3 flex min-w-0 items-center gap-2">
-                      {entry.is_dir ? (
-                        <Folder
-                          size={14}
-                          className="shrink-0 text-[var(--accent)]"
-                        />
-                      ) : (
-                        <File
-                          size={14}
-                          className="shrink-0 text-[var(--text-muted)]"
-                        />
-                      )}
-                      <span className="truncate">{entry.name}</span>
-                    </td>
-                    <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
-                      {entry.is_dir ? "-" : formatBytes(entry.size)}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right text-[11px] text-[var(--text-muted)]">
-                      {formatDate(entry.modified)}
-                    </td>
-                    <td className="py-1.5 pr-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {!entry.is_dir && onOpenFile && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenFile(entry);
-                            }}
-                            title="Edit file"
-                            className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--primary)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
-                          >
-                            <FileCode size={13} />
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => handleDeleteClick(e, entry)}
-                          title="Delete"
-                          className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {entries.map((entry) => (
+                <FileRow
+                  key={entry.path}
+                  entry={entry}
+                  isSelected={selectedFile?.path === entry.path}
+                  onSelect={onSelect}
+                  onDoubleClick={handleRowDoubleClick}
+                  onOpenFile={onOpenFile}
+                  onDelete={handleDeleteClick}
+                />
+              ))}
             </tbody>
           </table>
         )}
@@ -245,3 +205,75 @@ export function FilePane({
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED FILE ROW COMPONENT (High performance in directories with 1000+ items)
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface FileRowProps {
+  entry: FileEntry;
+  isSelected: boolean;
+  onSelect: (entry: FileEntry) => void;
+  onDoubleClick: (entry: FileEntry) => void;
+  onOpenFile?: (entry: FileEntry) => void;
+  onDelete: (e: React.MouseEvent, entry: FileEntry) => void;
+}
+
+const FileRow = memo(function FileRow({
+  entry,
+  isSelected,
+  onSelect,
+  onDoubleClick,
+  onOpenFile,
+  onDelete,
+}: FileRowProps) {
+  return (
+    <tr
+      onClick={() => onSelect(entry)}
+      onDoubleClick={() => onDoubleClick(entry)}
+      className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
+        isSelected
+          ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"
+          : "hover:bg-[var(--card)] text-[var(--text-primary)]"
+      }`}
+    >
+      <td className="py-1.5 pl-3 flex min-w-0 items-center gap-2">
+        {entry.is_dir ? (
+          <Folder size={14} className="shrink-0 text-[var(--accent)]" />
+        ) : (
+          <File size={14} className="shrink-0 text-[var(--text-muted)]" />
+        )}
+        <span className="truncate">{entry.name}</span>
+      </td>
+      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+        {entry.is_dir ? "-" : formatBytes(entry.size)}
+      </td>
+      <td className="py-1.5 pr-3 text-right text-[11px] text-[var(--text-muted)]">
+        {formatDate(entry.modified)}
+      </td>
+      <td className="py-1.5 pr-2 text-right">
+        <div className="flex items-center justify-end gap-1">
+          {!entry.is_dir && onOpenFile && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenFile(entry);
+              }}
+              title="Edit file"
+              className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--primary)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
+            >
+              <FileCode size={13} />
+            </button>
+          )}
+          <button
+            onClick={(e) => onDelete(e, entry)}
+            title="Delete"
+            className="rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] hover:bg-[var(--border)] group-hover:opacity-100 hover:opacity-100 transition-opacity"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, memo } from "react";
 import {
   Server,
   Terminal,
@@ -118,44 +118,58 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
     return filteredHosts.filter((h) => h.folder_id === selectedFolderId);
   }, [filteredHosts, selectedFolderId]);
 
-  async function handleConnect(host: Host) {
-    await openSession(host);
-  }
+  const handleConnect = useCallback(
+    async (host: Host) => {
+      await openSession(host);
+    },
+    [openSession]
+  );
 
-  async function handleSftpClick(e: React.MouseEvent, host: Host) {
-    e.stopPropagation();
-    onOpenSftp();
-    await connectRemote(host);
-  }
+  const handleSftpClick = useCallback(
+    async (e: React.MouseEvent, host: Host) => {
+      e.stopPropagation();
+      onOpenSftp();
+      await connectRemote(host);
+    },
+    [onOpenSftp, connectRemote]
+  );
 
-  function handleDelete(e: React.MouseEvent, host: Host) {
-    e.stopPropagation();
-    useConfirmStore.getState().confirm({
-      title: "Delete Host",
-      message: `Are you sure you want to delete "${host.label}" (${host.username}@${host.address})? This action cannot be undone.`,
-      confirmLabel: "Delete Host",
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteHost(host.id);
-      },
-    });
-  }
+  const handleDelete = useCallback(
+    (e: React.MouseEvent, host: Host) => {
+      e.stopPropagation();
+      useConfirmStore.getState().confirm({
+        title: "Delete Host",
+        message: `Are you sure you want to delete "${host.label}" (${host.username}@${host.address})? This action cannot be undone.`,
+        confirmLabel: "Delete Host",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteHost(host.id);
+        },
+      });
+    },
+    [deleteHost]
+  );
 
-  function handleDeleteFolder(e: React.MouseEvent, folder: Folder) {
-    e.stopPropagation();
-    useConfirmStore.getState().confirm({
-      title: "Delete Group",
-      message: `Are you sure you want to delete the group "${folder.name}"? Hosts inside this group will not be deleted and will move to ungrouped.`,
-      confirmLabel: "Delete Group",
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteFolder(folder.id);
-        if (selectedFolderId === folder.id) {
-          setSelectedFolderId(null);
-        }
-      },
-    });
-  }
+  const handleDeleteFolder = useCallback(
+    (e: React.MouseEvent, folder: Folder) => {
+      e.stopPropagation();
+      useConfirmStore.getState().confirm({
+        title: "Delete Group",
+        message: `Are you sure you want to delete the group "${folder.name}"? Hosts inside this group will not be deleted and will move to ungrouped.`,
+        confirmLabel: "Delete Group",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteFolder(folder.id);
+          setSelectedFolderId((prev) => (prev === folder.id ? null : prev));
+        },
+      });
+    },
+    [deleteFolder]
+  );
+
+  const handleToggleMenu = useCallback((hostId: string) => {
+    setActiveMenuHostId((prev) => (prev === hostId ? null : hostId));
+  }, []);
 
   return (
     <div
@@ -301,7 +315,20 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {hostsInActiveFolder.map((host) => renderHostCard(host))}
+              {hostsInActiveFolder.map((host) => (
+                <HostCard
+                  key={host.id}
+                  host={host}
+                  isOnline={statusByHostId[host.id]?.online ?? true}
+                  isMenuOpen={activeMenuHostId === host.id}
+                  onConnect={handleConnect}
+                  onToggleMenu={handleToggleMenu}
+                  onSftp={handleSftpClick}
+                  onTunnels={onOpenTunnels}
+                  onEdit={openEditModal}
+                  onDelete={handleDelete}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -321,52 +348,16 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {folders.map((folder) => {
-                  const count = folderCounts.get(folder.id) || 0;
-                  return (
-                    <div
-                      key={folder.id}
-                      onClick={() => setSelectedFolderId(folder.id)}
-                      className="group relative flex items-center gap-3.5 rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-all cursor-pointer shadow-sm hover:shadow-md"
-                    >
-                      {/* Group Icon Badge */}
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0284c7] text-white shadow-md transition-transform duration-200 group-hover:scale-105">
-                        <LayoutGrid size={18} />
-                      </div>
-
-                      {/* Group Name & Count */}
-                      <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
-                          {folder.name}
-                        </h3>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {count} {count === 1 ? "Host" : "Hosts"}
-                        </p>
-                      </div>
-
-                      {/* Quick Edit/Delete icon on hover */}
-                      <div
-                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => openEditFolderModal(folder)}
-                          title="Rename"
-                          className="rounded p-1 text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-high)]"
-                        >
-                          <Pencil size={11} />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteFolder(e, folder)}
-                          title="Delete"
-                          className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/20"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {folders.map((folder) => (
+                  <FolderCard
+                    key={folder.id}
+                    folder={folder}
+                    count={folderCounts.get(folder.id) || 0}
+                    onSelect={setSelectedFolderId}
+                    onEdit={openEditFolderModal}
+                    onDelete={handleDeleteFolder}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -402,7 +393,20 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {sortedRecentHosts.map((host) => renderHostCard(host))}
+                {sortedRecentHosts.map((host) => (
+                  <HostCard
+                    key={host.id}
+                    host={host}
+                    isOnline={statusByHostId[host.id]?.online ?? true}
+                    isMenuOpen={activeMenuHostId === host.id}
+                    onConnect={handleConnect}
+                    onToggleMenu={handleToggleMenu}
+                    onSftp={handleSftpClick}
+                    onTunnels={onOpenTunnels}
+                    onEdit={openEditModal}
+                    onDelete={handleDelete}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -410,115 +414,198 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
       )}
     </div>
   );
+}
 
-  // Termius-style Host Card (Matching Image #18)
-  function renderHostCard(host: Host) {
-    const isMenuOpen = activeMenuHostId === host.id;
-    const ping = statusByHostId[host.id];
-    const isOnline = ping ? ping.online : true;
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED FOLDER CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
 
-    return (
+interface FolderCardProps {
+  folder: Folder;
+  count: number;
+  onSelect: (folderId: string) => void;
+  onEdit: (folder: Folder) => void;
+  onDelete: (e: React.MouseEvent, folder: Folder) => void;
+}
+
+const FolderCard = memo(function FolderCard({
+  folder,
+  count,
+  onSelect,
+  onEdit,
+  onDelete,
+}: FolderCardProps) {
+  return (
+    <div
+      onClick={() => onSelect(folder.id)}
+      className="group relative flex items-center gap-3.5 rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-colors cursor-pointer shadow-sm hover:shadow-md"
+    >
+      {/* Group Icon Badge */}
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0284c7] text-white shadow-md transition-transform duration-200 group-hover:scale-105">
+        <LayoutGrid size={18} />
+      </div>
+
+      {/* Group Name & Count */}
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
+          {folder.name}
+        </h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          {count} {count === 1 ? "Host" : "Hosts"}
+        </p>
+      </div>
+
+      {/* Quick Edit/Delete icon on hover */}
       <div
-        key={host.id}
-        onClick={() => handleConnect(host)}
-        className="group relative flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-all cursor-pointer shadow-sm hover:shadow-md select-none"
+        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          {/* OS Distro Badge (Debian, Ubuntu, Linux, etc.) */}
-          <DistroBadge host={host} />
-
-          {/* Host Label & Username */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
-                {host.label}
-              </h3>
-              {!isOnline && (
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)] shrink-0" title="Offline" />
-              )}
-            </div>
-            <p className="truncate text-xs text-[var(--text-muted)] font-mono">
-              ssh, {host.username}
-            </p>
-          </div>
-        </div>
-
-        {/* Right Action Menu Button (3 dots) */}
-        <div
-          className="relative ml-2 shrink-0"
-          onClick={(e) => e.stopPropagation()}
+        <button
+          onClick={() => onEdit(folder)}
+          title="Rename"
+          className="rounded p-1 text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-high)]"
         >
-          <button
-            onClick={() => setActiveMenuHostId(isMenuOpen ? null : host.id)}
-            title="Options"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-high)] hover:text-white transition"
-          >
-            <MoreVertical size={14} />
-          </button>
+          <Pencil size={11} />
+        </button>
+        <button
+          onClick={(e) => onDelete(e, folder)}
+          title="Delete"
+          className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/20"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+    </div>
+  );
+});
 
-          {/* Dropdown Menu */}
-          {isMenuOpen && (
-            <div className="absolute right-0 top-8 z-30 w-36 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-              <button
-                onClick={() => {
-                  setActiveMenuHostId(null);
-                  handleConnect(host);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--primary)] hover:text-[var(--on-primary)] transition"
-              >
-                <Terminal size={13} />
-                <span>Connect SSH</span>
-              </button>
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED HOST CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
 
-              <button
-                onClick={(e) => {
-                  setActiveMenuHostId(null);
-                  handleSftpClick(e, host);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
-              >
-                <FolderOpen size={13} />
-                <span>SFTP Files</span>
-              </button>
+interface HostCardProps {
+  host: Host;
+  isOnline: boolean;
+  isMenuOpen: boolean;
+  onConnect: (host: Host) => void;
+  onToggleMenu: (hostId: string) => void;
+  onSftp: (e: React.MouseEvent, host: Host) => void;
+  onTunnels: () => void;
+  onEdit: (host: Host) => void;
+  onDelete: (e: React.MouseEvent, host: Host) => void;
+}
 
-              <button
-                onClick={() => {
-                  setActiveMenuHostId(null);
-                  onOpenTunnels();
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
-              >
-                <Waypoints size={13} />
-                <span>Tunnels</span>
-              </button>
+const HostCard = memo(function HostCard({
+  host,
+  isOnline,
+  isMenuOpen,
+  onConnect,
+  onToggleMenu,
+  onSftp,
+  onTunnels,
+  onEdit,
+  onDelete,
+}: HostCardProps) {
+  return (
+    <div
+      onClick={() => onConnect(host)}
+      className="group relative flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-colors cursor-pointer shadow-sm hover:shadow-md select-none"
+    >
+      <div className="flex items-center gap-3.5 min-w-0 flex-1">
+        {/* OS Distro Badge (Debian, Ubuntu, Linux, etc.) */}
+        <DistroBadge host={host} />
 
-              <button
-                onClick={() => {
-                  setActiveMenuHostId(null);
-                  openEditModal(host);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
-              >
-                <Pencil size={13} />
-                <span>Edit Host</span>
-              </button>
-
-              <div className="my-1 border-t border-[var(--border)]" />
-
-              <button
-                onClick={(e) => {
-                  setActiveMenuHostId(null);
-                  handleDelete(e, host);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/20 transition"
-              >
-                <Trash2 size={13} />
-                <span>Delete</span>
-              </button>
-            </div>
-          )}
+        {/* Host Label & Username */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
+              {host.label}
+            </h3>
+            {!isOnline && (
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)] shrink-0" title="Offline" />
+            )}
+          </div>
+          <p className="truncate text-xs text-[var(--text-muted)] font-mono">
+            ssh, {host.username}
+          </p>
         </div>
       </div>
-    );
-  }
-}
+
+      {/* Right Action Menu Button (3 dots) */}
+      <div
+        className="relative ml-2 shrink-0"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => onToggleMenu(host.id)}
+          title="Options"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:bg-[var(--surface-high)] hover:text-white transition"
+        >
+          <MoreVertical size={14} />
+        </button>
+
+        {/* Dropdown Menu */}
+        {isMenuOpen && (
+          <div className="absolute right-0 top-8 z-30 w-36 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+            <button
+              onClick={() => {
+                onToggleMenu(host.id);
+                onConnect(host);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--primary)] hover:text-[var(--on-primary)] transition"
+            >
+              <Terminal size={13} />
+              <span>Connect SSH</span>
+            </button>
+
+            <button
+              onClick={(e) => {
+                onToggleMenu(host.id);
+                onSftp(e, host);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+            >
+              <FolderOpen size={13} />
+              <span>SFTP Files</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onToggleMenu(host.id);
+                onTunnels();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+            >
+              <Waypoints size={13} />
+              <span>Tunnels</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onToggleMenu(host.id);
+                onEdit(host);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+            >
+              <Pencil size={13} />
+              <span>Edit Host</span>
+            </button>
+
+            <div className="my-1 border-t border-[var(--border)]" />
+
+            <button
+              onClick={(e) => {
+                onToggleMenu(host.id);
+                onDelete(e, host);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/20 transition"
+            >
+              <Trash2 size={13} />
+              <span>Delete</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});

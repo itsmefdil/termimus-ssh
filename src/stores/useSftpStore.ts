@@ -56,6 +56,10 @@ export const useSftpStore = create<SftpState>((set, get) => ({
   error: null,
 
   initLocal: async () => {
+    // Preserve current local path if already initialized
+    if (get().localPath && get().localEntries.length > 0) {
+      return;
+    }
     set({ localLoading: true, error: null });
     try {
       const home = await api.getLocalHomeDir();

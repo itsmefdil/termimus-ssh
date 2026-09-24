@@ -29,7 +29,9 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
   startingRuleId: null,
 
   refresh: async () => {
-    set({ isLoading: true, error: null });
+    if (get().rules.length === 0) {
+      set({ isLoading: true, error: null });
+    }
     try {
       const [rules, active] = await Promise.all([
         api.listTunnelRules(),

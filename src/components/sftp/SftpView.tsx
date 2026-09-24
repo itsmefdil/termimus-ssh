@@ -52,7 +52,7 @@ export function SftpView() {
   }, [initLocal]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--background)] p-3">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-3">
       {/* Top SFTP Control Bar */}
       <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2.5">
         <div className="flex items-center gap-3">

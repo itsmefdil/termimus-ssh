@@ -155,7 +155,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
         <div className="w-full px-3 pb-2 pt-1">
           <div className="flex h-8 w-full items-center justify-between">
             <div className="flex min-w-0 items-center">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-[var(--surface-container)] cursor-default transition-colors">
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-[var(--surface-container)] cursor-default transition-colors">
                 <CloudCheck
                   size={18}
                   className={isUnlocked ? "text-[var(--primary)]" : "text-[var(--text-muted)]"}

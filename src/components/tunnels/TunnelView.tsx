@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useCallback, memo } from "react";
 import {
   ArrowLeftRight,
   Plus,
@@ -14,6 +14,7 @@ import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { TunnelModal } from "./TunnelModal";
+import { PortForwardRule, Host } from "../../lib/api";
 
 export function TunnelView() {
   const {
@@ -32,23 +33,28 @@ export function TunnelView() {
   const { hosts } = useHostStore();
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (rules.length === 0) {
+      refresh();
+    }
+  }, [rules.length, refresh]);
 
-  function handleDelete(ruleId: string, ruleLabel?: string) {
-    useConfirmStore.getState().confirm({
-      title: "Delete Port Forwarding Rule",
-      message: `Are you sure you want to delete ${ruleLabel ? `"${ruleLabel}"` : "this tunnel rule"}? This action cannot be undone.`,
-      confirmLabel: "Delete Rule",
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteRule(ruleId);
-      },
-    });
-  }
+  const handleDelete = useCallback(
+    (ruleId: string, ruleLabel?: string) => {
+      useConfirmStore.getState().confirm({
+        title: "Delete Port Forwarding Rule",
+        message: `Are you sure you want to delete ${ruleLabel ? `"${ruleLabel}"` : "this tunnel rule"}? This action cannot be undone.`,
+        confirmLabel: "Delete Rule",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteRule(ruleId);
+        },
+      });
+    },
+    [deleteRule]
+  );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--background)] p-4">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none">
       <TunnelModal />
 
       {/* Header */}
@@ -106,102 +112,16 @@ export function TunnelView() {
               const isBusy = startingRuleId === rule.id;
 
               return (
-                <div
+                <TunnelCard
                   key={rule.id}
-                  className={`flex flex-col rounded-xl border p-4 transition-all ${
-                    isActive
-                      ? "border-[var(--success)]/40 bg-[var(--success)]/5 shadow-md shadow-[var(--success)]/5"
-                      : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--border)]/80"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                          isActive
-                            ? "bg-[var(--success)] animate-pulse"
-                            : "bg-[var(--text-muted)]/40"
-                        }`}
-                      />
-                      <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                        {rule.label}
-                      </h3>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        onClick={() => openEditModal(rule)}
-                        disabled={isActive}
-                        title="Edit rule"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white disabled:opacity-30"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(rule.id, rule.label)}
-                        disabled={isActive}
-                        title="Delete rule"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] disabled:opacity-30 transition"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Endpoint Routing Diagram */}
-                  <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-xs mb-3 space-y-1 font-mono">
-                    <div className="flex items-center justify-between text-[var(--text-muted)]">
-                      <span>Local:</span>
-                      <span className="text-[var(--accent)] font-semibold">
-                        {rule.local_address}:{rule.local_port}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[var(--text-muted)]">
-                      <span>Target:</span>
-                      <span className="text-[var(--text-primary)]">
-                        {rule.remote_address}:{rule.remote_port}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Via Host */}
-                  <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)] mb-4">
-                    <Server size={12} className="shrink-0" />
-                    <span className="truncate">
-                      via {host ? host.label : "Unknown host"}
-                    </span>
-                  </div>
-
-                  {/* Toggle Button */}
-                  <div className="mt-auto pt-2 border-t border-[var(--border)]/50">
-                    <button
-                      onClick={() => toggleTunnel(rule)}
-                      disabled={isBusy}
-                      className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition ${
-                        isActive
-                          ? "bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25"
-                          : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
-                      } disabled:opacity-50`}
-                    >
-                      {isBusy ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin" />
-                          <span>{isActive ? "Stopping..." : "Connecting..."}</span>
-                        </>
-                      ) : isActive ? (
-                        <>
-                          <Square size={12} />
-                          <span>Stop Tunnel</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play size={12} />
-                          <span>Start Tunnel</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
+                  rule={rule}
+                  host={host}
+                  isActive={isActive}
+                  isBusy={isBusy}
+                  onToggle={toggleTunnel}
+                  onEdit={openEditModal}
+                  onDelete={handleDelete}
+                />
               );
             })}
           </div>
@@ -210,3 +130,125 @@ export function TunnelView() {
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MEMOIZED TUNNEL CARD COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface TunnelCardProps {
+  rule: PortForwardRule;
+  host: Host | undefined;
+  isActive: boolean;
+  isBusy: boolean;
+  onToggle: (rule: PortForwardRule) => void;
+  onEdit: (rule: PortForwardRule) => void;
+  onDelete: (id: string, label?: string) => void;
+}
+
+const TunnelCard = memo(function TunnelCard({
+  rule,
+  host,
+  isActive,
+  isBusy,
+  onToggle,
+  onEdit,
+  onDelete,
+}: TunnelCardProps) {
+  return (
+    <div
+      className={`flex flex-col rounded-xl border p-4 transition-colors shadow-xs ${
+        isActive
+          ? "border-[var(--success)]/40 bg-[var(--success)]/5 shadow-md shadow-[var(--success)]/5"
+          : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--border)]/80"
+      }`}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+              isActive
+                ? "bg-[var(--success)] animate-pulse"
+                : "bg-[var(--text-muted)]/40"
+            }`}
+          />
+          <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+            {rule.label}
+          </h3>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => onEdit(rule)}
+            disabled={isActive}
+            title="Edit rule"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white disabled:opacity-30"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={() => onDelete(rule.id, rule.label)}
+            disabled={isActive}
+            title="Delete rule"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] disabled:opacity-30 transition"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Endpoint Routing Diagram */}
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-xs mb-3 space-y-1 font-mono">
+        <div className="flex items-center justify-between text-[var(--text-muted)]">
+          <span>Local:</span>
+          <span className="text-[var(--accent)] font-semibold">
+            {rule.local_address}:{rule.local_port}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-[var(--text-muted)]">
+          <span>Target:</span>
+          <span className="text-[var(--text-primary)]">
+            {rule.remote_address}:{rule.remote_port}
+          </span>
+        </div>
+      </div>
+
+      {/* Via Host */}
+      <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)] mb-4">
+        <Server size={12} className="shrink-0" />
+        <span className="truncate">
+          via {host ? host.label : "Unknown host"}
+        </span>
+      </div>
+
+      {/* Toggle Button */}
+      <div className="mt-auto pt-2 border-t border-[var(--border)]/50">
+        <button
+          onClick={() => onToggle(rule)}
+          disabled={isBusy}
+          className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition ${
+            isActive
+              ? "bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25"
+              : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
+          } disabled:opacity-50`}
+        >
+          {isBusy ? (
+            <>
+              <Loader2 size={13} className="animate-spin" />
+              <span>{isActive ? "Stopping..." : "Starting..."}</span>
+            </>
+          ) : isActive ? (
+            <>
+              <Square size={13} />
+              <span>Stop Tunnel</span>
+            </>
+          ) : (
+            <>
+              <Play size={13} />
+              <span>Start Tunnel</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+});

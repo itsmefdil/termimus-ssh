@@ -44,7 +44,10 @@ export const useKeychainStore = create<KeychainState>((set, get) => ({
   editingIdentity: null,
 
   refresh: async () => {
-    set({ isLoading: true });
+    // Only flash isLoading when items are empty to avoid UI flicker
+    if (get().items.length === 0) {
+      set({ isLoading: true });
+    }
     try {
       const items = await api.listKeychain();
       set({ items, isLoading: false });
