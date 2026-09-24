@@ -8,7 +8,7 @@ import { ResizeHandles } from "./components/layout/ResizeHandles";
 import { HostList } from "./components/hosts/HostList";
 import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
-import { XtermView } from "./components/terminal/XtermView";
+import { TerminalWorkspace } from "./components/terminal/TerminalWorkspace";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
@@ -38,7 +38,7 @@ function App() {
   const { isUnlocked, refresh: refreshVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
   const { refresh: refreshKeychain } = useKeychainStore();
-  const { tabs, activeTabId } = useSessionStore();
+  const { activeTabId, activeGroupId } = useSessionStore();
 
   // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
   useAutoLock();
@@ -72,12 +72,12 @@ function App() {
     return () => window.removeEventListener("resize", handleWindowResize);
   }, []);
 
-  // When a new tab is opened, automatically switch to the terminal view
+  // When a new tab/group is opened, automatically switch to the terminal view
   useEffect(() => {
-    if (activeTabId) {
+    if (activeGroupId || activeTabId) {
       setActiveNav("terminal");
     }
-  }, [activeTabId]);
+  }, [activeGroupId, activeTabId]);
 
   const showTerminal = activeNav === "terminal";
 
@@ -107,32 +107,7 @@ function App() {
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
           {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
-          <div
-            className="absolute inset-0"
-            style={{
-              visibility: showTerminal ? "visible" : "hidden",
-              pointerEvents: showTerminal ? "auto" : "none",
-              zIndex: showTerminal ? 10 : 0,
-            }}
-          >
-            {tabs.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-center text-[var(--text-muted)]">
-                <div>
-                  <p className="text-sm font-medium">No open terminal</p>
-                  <p className="text-xs mt-1">Select a host to connect via SSH</p>
-                </div>
-              </div>
-            ) : (
-              tabs.map((tab) => (
-                <XtermView
-                  key={tab.id}
-                  sessionId={tab.id}
-                  hostId={tab.hostId}
-                  visible={showTerminal && tab.id === activeTabId}
-                />
-              ))
-            )}
-          </div>
+          <TerminalWorkspace visible={showTerminal} />
 
           {activeNav === "hosts" && (
             <HostList

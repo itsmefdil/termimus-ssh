@@ -21,17 +21,56 @@ interface SshProgressEvent {
   is_error: boolean;
 }
 
+interface TerminalSessionEntry {
+  term: Terminal;
+  fitAddon: FitAddon;
+  element: HTMLDivElement;
+  hasConnected: boolean;
+  unlistenFns: Array<() => void>;
+  dataDisposable: { dispose: () => void };
+  lastSize: { cols: number; rows: number };
+}
+
+// Module-level persistent pool of active xterm instances.
+// Keeps active SSH sessions, PTY streams, and terminal buffers alive across
+// React layout reconciliations (splitting, moving tabs, un-splitting, resizing).
+const terminalPool = new Map<string, TerminalSessionEntry>();
+
+/**
+ * Cleanly disposes a terminal session when a tab is explicitly closed.
+ */
+export function disposeTerminalSession(sessionId: string) {
+  const entry = terminalPool.get(sessionId);
+  if (!entry) return;
+
+  try {
+    entry.dataDisposable.dispose();
+  } catch {
+    // ignore
+  }
+
+  entry.unlistenFns.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      // ignore
+    }
+  });
+
+  try {
+    entry.term.dispose();
+  } catch {
+    // ignore
+  }
+
+  terminalPool.delete(sessionId);
+}
+
 export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
-  // Guards against React StrictMode's dev-mode double-effect-invocation firing
-  // connectSsh twice for the same session, which would open two real SSH
-  // connections that both stream the shell's MOTD/banner into the same
-  // terminal — the exact "double output on login" symptom. Refs survive
-  // StrictMode's mount→cleanup→remount simulation, so this stays true across it.
-  const hasConnectedRef = useRef(false);
 
   const setConnected = useSessionStore((s) => s.setSessionConnected);
   const setError = useSessionStore((s) => s.setSessionError);
@@ -43,111 +82,131 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  const startConnection = useCallback((cols: number, rows: number) => {
-    setConnectionError(null);
-    setIsConnected(false);
-    setCurrentStep(1);
-    setLogs([
-      {
-        step: 1,
-        message: `Initiating connection to ${host?.address || "server"}...`,
-        timestamp: new Date().toISOString(),
-        isError: false,
-      },
-    ]);
+  const startConnection = useCallback(
+    (cols: number, rows: number) => {
+      setConnectionError(null);
+      setIsConnected(false);
+      setCurrentStep(1);
+      setLogs([
+        {
+          step: 1,
+          message: `Initiating connection to ${host?.address || "server"}...`,
+          timestamp: new Date().toISOString(),
+          isError: false,
+        },
+      ]);
 
-    api
-      .connectSsh(hostId, sessionId, cols, rows)
-      .then(() => {
-        setIsConnected(true);
-        setConnected(sessionId, true);
-        setConnectionError(null);
-      })
-      .catch((e) => {
-        const errStr = String(e);
-        setConnectionError(errStr);
-        setError(sessionId, errStr);
-        termRef.current?.write(`\r\n\x1b[31mFailed to connect: ${errStr}\x1b[0m\r\n`);
-      });
-  }, [hostId, sessionId, host, setConnected, setError]);
+      api
+        .connectSsh(hostId, sessionId, cols, rows)
+        .then(() => {
+          setIsConnected(true);
+          setConnected(sessionId, true);
+          setConnectionError(null);
+        })
+        .catch((e) => {
+          const errStr = String(e);
+          setConnectionError(errStr);
+          setError(sessionId, errStr);
+          termRef.current?.write(`\r\n\x1b[31mFailed to connect: ${errStr}\x1b[0m\r\n`);
+        });
+    },
+    [hostId, sessionId, host, setConnected, setError]
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Use pure standard DOM / Canvas renderer (100% stable, no WebGL context loss or flickering on WebKitGTK)
-    const term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: "bar",
-      fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
-      fontSize: 13.5,
-      lineHeight: 1.35,
-      letterSpacing: 0,
-      scrollback: 5000,
-      theme: {
-        background: "#0a0e14",
-        foreground: "#f0f6fc",
-        cursor: "#00d2b4",
-        cursorAccent: "#0a0e14",
-        selectionBackground: "#00d2b433",
-        black: "#161b22",
-        red: "#f85149",
-        green: "#3fb950",
-        yellow: "#e3b341",
-        blue: "#38bdf8",
-        magenta: "#cbacff",
-        cyan: "#2adec0",
-        white: "#f0f6fc",
-        brightBlack: "#6e7681",
-        brightRed: "#ff7b72",
-        brightGreen: "#56d364",
-        brightYellow: "#e3b341",
-        brightBlue: "#79c0ff",
-        brightMagenta: "#d2a8ff",
-        brightCyan: "#56d4dd",
-        brightWhite: "#f0f6fc",
-      },
-      allowProposedApi: true,
-    });
+    let entry = terminalPool.get(sessionId);
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
+    if (entry) {
+      // Reuse existing terminal instance without reconnecting SSH!
+      termRef.current = entry.term;
+      fitAddonRef.current = entry.fitAddon;
+      lastSizeRef.current = entry.lastSize;
+      setIsConnected(true);
 
-    term.open(containerRef.current);
-
-    // Initial fit if container has dimensions, or fallback to standard 80x24
-    let initialCols = 80;
-    let initialRows = 24;
-    try {
-      if (containerRef.current.clientWidth >= 100 && containerRef.current.clientHeight >= 100) {
-        fitAddon.fit();
-        initialCols = Math.max(term.cols, 20);
-        initialRows = Math.max(term.rows, 5);
+      if (entry.element.parentElement !== containerRef.current) {
+        containerRef.current.appendChild(entry.element);
       }
-    } catch {
-      // fallback
-    }
+    } else {
+      // Create new terminal instance
+      const domWrapper = document.createElement("div");
+      domWrapper.className = "w-full h-full";
+      containerRef.current.appendChild(domWrapper);
 
-    lastSizeRef.current = { cols: initialCols, rows: initialRows };
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
+      const term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: "bar",
+        fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
+        fontSize: 13.5,
+        lineHeight: 1.35,
+        letterSpacing: 0,
+        scrollback: 5000,
+        theme: {
+          background: "#0a0e14",
+          foreground: "#f0f6fc",
+          cursor: "#00d2b4",
+          cursorAccent: "#0a0e14",
+          selectionBackground: "#00d2b433",
+          black: "#161b22",
+          red: "#f85149",
+          green: "#3fb950",
+          yellow: "#e3b341",
+          blue: "#38bdf8",
+          magenta: "#cbacff",
+          cyan: "#2adec0",
+          white: "#f0f6fc",
+          brightBlack: "#6e7681",
+          brightRed: "#ff7b72",
+          brightGreen: "#56d364",
+          brightYellow: "#e3b341",
+          brightBlue: "#79c0ff",
+          brightMagenta: "#d2a8ff",
+          brightCyan: "#56d4dd",
+          brightWhite: "#f0f6fc",
+        },
+        allowProposedApi: true,
+      });
 
-    // Forward keystrokes to backend
-    const dataDisposable = term.onData((data) => {
-      const bytes = Array.from(new TextEncoder().encode(data));
-      api.writeSsh(sessionId, bytes).catch((e) => console.error("ssh_write failed:", e));
-    });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(domWrapper);
 
-    // Listen for backend -> frontend data stream & progress events
-    const unlistenPromises = [
+      let initialCols = 80;
+      let initialRows = 24;
+      try {
+        if (containerRef.current.clientWidth >= 100 && containerRef.current.clientHeight >= 100) {
+          fitAddon.fit();
+          initialCols = Math.max(term.cols, 20);
+          initialRows = Math.max(term.rows, 5);
+        }
+      } catch {
+        // fallback
+      }
+
+      lastSizeRef.current = { cols: initialCols, rows: initialRows };
+      termRef.current = term;
+      fitAddonRef.current = fitAddon;
+
+      // Keystroke forwarding
+      const dataDisposable = term.onData((data) => {
+        const bytes = Array.from(new TextEncoder().encode(data));
+        api.writeSsh(sessionId, bytes).catch((e) => console.error("ssh_write failed:", e));
+      });
+
+      // Stream listeners
+      const unlistenFns: Array<() => void> = [];
       listen<number[]>(`ssh-data-${sessionId}`, (event) => {
         const bytes = new Uint8Array(event.payload);
         term.write(bytes);
-      }),
+      }).then((unlisten) => unlistenFns.push(unlisten));
+
       listen<string>(`ssh-closed-${sessionId}`, () => {
         setConnected(sessionId, false);
         setIsConnected(false);
         term.write("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n");
-      }),
+      }).then((unlisten) => unlistenFns.push(unlisten));
+
       listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
         const p = event.payload;
         setCurrentStep(p.step);
@@ -163,16 +222,23 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         if (p.is_error) {
           setConnectionError(p.message);
         }
-      }),
-    ];
+      }).then((unlisten) => unlistenFns.push(unlisten));
 
-    // Kick off connection once (guarded against duplicate mount triggers)
-    if (!hasConnectedRef.current) {
-      hasConnectedRef.current = true;
+      entry = {
+        term,
+        fitAddon,
+        element: domWrapper,
+        hasConnected: true,
+        unlistenFns,
+        dataDisposable,
+        lastSize: { cols: initialCols, rows: initialRows },
+      };
+      terminalPool.set(sessionId, entry);
+
       startConnection(initialCols, initialRows);
     }
 
-    // Resizing logic with strict dimension guarding
+    // Resize observer guarding cols >= 20 and rows >= 5
     const handleResize = () => {
       if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
       const width = containerRef.current.clientWidth;
@@ -191,6 +257,9 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
             lastSizeRef.current.rows !== rows
           ) {
             lastSizeRef.current = { cols, rows };
+            if (entry) {
+              entry.lastSize = { cols, rows };
+            }
             api.resizeSsh(sessionId, cols, rows).catch(() => {});
           }
         }
@@ -205,10 +274,11 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
-      dataDisposable.dispose();
       resizeObserver.disconnect();
-      Promise.all(unlistenPromises).then((fns) => fns.forEach((fn) => fn()));
-      term.dispose();
+      // Remove wrapper from container so it can be re-appended on next mount if moved
+      if (entry && containerRef.current && entry.element.parentElement === containerRef.current) {
+        containerRef.current.removeChild(entry.element);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -233,10 +303,11 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
             lastSizeRef.current.rows !== rows
           ) {
             lastSizeRef.current = { cols, rows };
+            const entry = terminalPool.get(sessionId);
+            if (entry) entry.lastSize = { cols, rows };
             api.resizeSsh(sessionId, cols, rows).catch(() => {});
           }
         }
-        // Force full repaint of current screen buffer (cleans up any glitch from htop)
         termRef.current.refresh(0, termRef.current.rows - 1);
         termRef.current.focus();
       } catch {
