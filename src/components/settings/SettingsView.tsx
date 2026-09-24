@@ -466,7 +466,7 @@ function AboutTab() {
             <div className="flex items-center gap-2.5">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">Termimus</h3>
               <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30">
-                v0.1.5
+                v0.2.0
               </span>
             </div>
             <p className="text-xs text-[var(--text-secondary)]">

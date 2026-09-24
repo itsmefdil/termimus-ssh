@@ -244,34 +244,38 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       startConnection(initialCols, initialRows);
     }
 
-    // Resize observer guarding cols >= 20 and rows >= 5
+    // Debounced resize observer to prevent layout thrashing and IPC flooding during animations (sidebar toggle, split dragging)
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const handleResize = () => {
-      if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
-      const width = containerRef.current.clientWidth;
-      const height = containerRef.current.clientHeight;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
+        const width = containerRef.current.clientWidth;
+        const height = containerRef.current.clientHeight;
 
-      if (width < 100 || height < 100) return;
+        if (width < 100 || height < 100) return;
 
-      try {
-        fitAddonRef.current.fit();
-        const cols = termRef.current.cols;
-        const rows = termRef.current.rows;
+        try {
+          fitAddonRef.current.fit();
+          const cols = termRef.current.cols;
+          const rows = termRef.current.rows;
 
-        if (cols >= 20 && rows >= 5) {
-          if (
-            lastSizeRef.current.cols !== cols ||
-            lastSizeRef.current.rows !== rows
-          ) {
-            lastSizeRef.current = { cols, rows };
-            if (entry) {
-              entry.lastSize = { cols, rows };
+          if (cols >= 20 && rows >= 5) {
+            if (
+              lastSizeRef.current.cols !== cols ||
+              lastSizeRef.current.rows !== rows
+            ) {
+              lastSizeRef.current = { cols, rows };
+              if (entry) {
+                entry.lastSize = { cols, rows };
+              }
+              api.resizeSsh(sessionId, cols, rows).catch(() => {});
             }
-            api.resizeSsh(sessionId, cols, rows).catch(() => {});
           }
+        } catch {
+          // ignore fit during layout animation
         }
-      } catch {
-        // ignore fit during layout animation
-      }
+      }, 50);
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -280,6 +284,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       // Remove wrapper from container so it can be re-appended on next mount if moved
       if (entry && containerRef.current && entry.element.parentElement === containerRef.current) {

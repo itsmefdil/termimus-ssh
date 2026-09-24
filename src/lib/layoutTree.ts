@@ -36,11 +36,30 @@ export function generateGroupId(): string {
  * Creates the initial single-leaf layout with one active tab.
  */
 export function createInitialLayout(tabId: string): PaneLeaf {
+  return createLeafPane(tabId);
+}
+
+export function createLeafPane(tabId: string): PaneLeaf {
   return {
     type: "leaf",
     id: generatePaneId(),
     tabIds: [tabId],
     activeTabId: tabId,
+  };
+}
+
+export function createSplitPane(
+  direction: SplitDirection,
+  first: PaneNode,
+  second: PaneNode,
+  ratio = 50
+): PaneSplit {
+  return {
+    type: "split",
+    id: generateSplitId(),
+    direction,
+    ratio,
+    children: [first, second],
   };
 }
 

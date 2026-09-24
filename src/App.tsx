@@ -13,6 +13,7 @@ import { HostList } from "./components/hosts/HostList";
 import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
 import { TerminalWorkspace } from "./components/terminal/TerminalWorkspace";
+import { WorkspaceView } from "./components/workspaces/WorkspaceView";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
@@ -152,12 +153,21 @@ function App() {
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
           {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
-          <TerminalWorkspace visible={showTerminal} />
+          <TerminalWorkspace
+            visible={showTerminal}
+            onOpenWorkspaces={() => handleNavChange("workspaces")}
+          />
 
           {/* Lazy-mounted Native-Grade Keep-Alive Views:
               Each view is mounted on first visit and preserved across tab switches.
               Switches happen in 0ms (1 frame), scroll positions are remembered,
               and inputs/folder drill-downs stay intact. */}
+          {visitedTabs.has("workspaces") && (
+            <PageView active={activeNav === "workspaces"}>
+              <WorkspaceView onOpenTerminal={() => handleNavChange("terminal")} />
+            </PageView>
+          )}
+
           {visitedTabs.has("hosts") && (
             <PageView active={activeNav === "hosts"}>
               <HostList

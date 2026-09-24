@@ -1,6 +1,6 @@
 import {
   Server,
-  Terminal,
+  Layers,
   FolderOpen,
   Braces,
   Waypoints,
@@ -11,12 +11,12 @@ import {
 } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useHostStore } from "../../stores/useHostStore";
-import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useKeychainStore } from "../../stores/useKeychainStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 
-export type ActiveTab = "hosts" | "terminal" | "sftp" | "keychain" | "tunnels" | "snippets" | "settings";
+export type ActiveTab = "hosts" | "workspaces" | "terminal" | "sftp" | "keychain" | "tunnels" | "snippets" | "settings";
 
 interface SidebarProps {
   activeNav: ActiveTab;
@@ -24,16 +24,16 @@ interface SidebarProps {
   isCollapsed: boolean;
 }
 
-// Swift native cubic-bezier curve for fluid, responsive desktop sidebar transition
-const TRANSITION = "duration-200 ease-[cubic-bezier(0.2,0,0,1)]";
+// Snappy desktop transition curve for responsive sidebar collapse
+const TRANSITION = "duration-150 ease-out";
 
 export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
   const { isUnlocked, lock: lockVault } = useVaultStore();
   const { hosts } = useHostStore();
-  const { tabs } = useSessionStore();
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
   const { items: keychainItems } = useKeychainStore();
+  const { presets } = useWorkspaceStore();
 
   const navItems: {
     icon: typeof Server;
@@ -44,7 +44,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
   }[] = [
     { icon: Server, label: "Hosts", id: "hosts", badge: hosts.length || undefined },
     { icon: KeyRound, label: "Keychain", id: "keychain", badge: keychainItems.length || undefined },
-    { icon: Terminal, label: "Terminal Sessions", id: "terminal", badge: tabs.length || undefined },
+    { icon: Layers, label: "Workspaces", id: "workspaces", badge: presets.length || undefined },
     { icon: FolderOpen, label: "SFTP Browser", id: "sftp" },
     { icon: Braces, label: "Snippets & Scripts", id: "snippets", badge: snippets.length || undefined },
     { icon: Waypoints, label: "Port Forwarding", id: "tunnels", badgeDot: activeRuleIds.size > 0 },
@@ -52,7 +52,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
 
   return (
     <aside
-      className={`flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--canvas)] select-none transition-[width] ${TRANSITION} will-change-[width] ${
+      className={`flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--canvas)] select-none transition-[width] ${TRANSITION} ${
         isCollapsed ? "w-[64px]" : "w-56"
       }`}
     >

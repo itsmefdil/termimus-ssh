@@ -1,15 +1,17 @@
 import { useEffect } from "react";
-import { Terminal as TerminalIcon, Minimize2, Radio, Unlink } from "lucide-react";
+import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus } from "lucide-react";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
 import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
 
 interface TerminalWorkspaceProps {
   visible: boolean;
+  onOpenWorkspaces?: () => void;
 }
 
-export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
+export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspaceProps) {
   const {
     tabs,
     rootPane,
@@ -75,6 +77,37 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
     return tab && tab.connected;
   }).length;
 
+  const handleSaveCurrentSplit = () => {
+    if (leafPanes.length < 2) return;
+    let layoutType: WorkspacePreset["layout"] = "split-vertical";
+    if (leafPanes.length === 2) {
+      layoutType =
+        rootPane?.type === "split" && rootPane.direction === "column"
+          ? "split-horizontal"
+          : "split-vertical";
+    } else if (leafPanes.length === 4) {
+      layoutType = "grid-4";
+    } else if (leafPanes.length === 3) {
+      layoutType = "split-1-2";
+    }
+
+    const capturedNodes = leafPanes.map((pane, idx) => {
+      const tab = tabs.find((t) => t.id === pane.activeTabId);
+      return {
+        paneIndex: idx,
+        hostId: tab ? tab.hostId : "",
+        label: tab ? tab.hostLabel : undefined,
+      };
+    });
+
+    useWorkspaceStore.getState().openCreateModal({
+      name: `Active Cluster (${leafPanes.length} Nodes)`,
+      layout: layoutType,
+      nodes: capturedNodes,
+      broadcastOnLaunch: isBroadcast,
+    });
+  };
+
   return (
     <div
       className="absolute inset-0 select-none"
@@ -85,11 +118,25 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
       }}
     >
       {tabs.length === 0 || !rootPane ? (
-        <div className="flex h-full items-center justify-center text-center text-[var(--text-muted)]">
-          <div>
-            <p className="text-sm font-medium">No open terminal</p>
-            <p className="text-xs mt-1">Select a host to connect via SSH</p>
+        <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] gap-3 p-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)]">
+            <TerminalIcon size={22} />
           </div>
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">No Active Terminal Sessions</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              Select a host to connect or launch a multi-server Workspace Preset
+            </p>
+          </div>
+          {onOpenWorkspaces && (
+            <button
+              onClick={onOpenWorkspaces}
+              className="mt-1 flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[var(--primary)]/90 transition-all shadow-sm active:scale-95"
+            >
+              <Layers size={13} />
+              <span>Open Workspaces</span>
+            </button>
+          )}
         </div>
       ) : maximizedPane ? (
         // Maximized Single Pane Mode
@@ -123,6 +170,14 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSaveCurrentSplit}
+                  className="flex items-center gap-1 rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors"
+                  title="Save this split screen as a Workspace Preset"
+                >
+                  <BookmarkPlus size={11} />
+                  <span>Save Preset</span>
+                </button>
                 <span className="text-[10px] text-[var(--text-muted)] font-mono hidden md:inline">
                   Alt+B
                 </span>
