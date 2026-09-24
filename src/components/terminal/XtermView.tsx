@@ -188,10 +188,16 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // Keystroke forwarding
+      // Keystroke forwarding (supports broadcast to interconnected split panes)
       const dataDisposable = term.onData((data) => {
         const bytes = Array.from(new TextEncoder().encode(data));
-        api.writeSsh(sessionId, bytes).catch((e) => console.error("ssh_write failed:", e));
+        const targetSessionIds = useSessionStore
+          .getState()
+          .getBroadcastTargetSessionIds(sessionId);
+
+        for (const tid of targetSessionIds) {
+          api.writeSsh(tid, bytes).catch((e) => console.error("ssh_write failed:", e));
+        }
       });
 
       // Stream listeners

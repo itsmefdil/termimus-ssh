@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { Terminal as TerminalIcon, Minimize2 } from "lucide-react";
+import { Terminal as TerminalIcon, Minimize2, Radio, Unlink } from "lucide-react";
 import { useSessionStore } from "../../stores/useSessionStore";
-import { findPaneById } from "../../lib/layoutTree";
+import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
 
@@ -13,6 +13,7 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
   const {
     tabs,
     rootPane,
+    activeGroupId,
     maximizedPaneId,
     toggleMaximizePane,
     isDraggingTab,
@@ -20,6 +21,8 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
     pointerPos,
     updateDragPos,
     endDragTab,
+    isGroupBroadcastActive,
+    toggleGroupBroadcast,
   } = useSessionStore();
 
   // Global pointer tracking for tab drag-and-drop
@@ -51,14 +54,26 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
       if (e.key === "Escape" && maximizedPaneId) {
         toggleMaximizePane(maximizedPaneId);
       }
+      // Alt+B toggles input broadcast mode on the active group
+      if (e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleGroupBroadcast(activeGroupId || undefined);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [maximizedPaneId, toggleMaximizePane]);
+  }, [maximizedPaneId, toggleMaximizePane, activeGroupId, toggleGroupBroadcast]);
 
   const draggedTab = draggedTabId ? tabs.find((t) => t.id === draggedTabId) : null;
   const maximizedPane =
     rootPane && maximizedPaneId ? findPaneById(rootPane, maximizedPaneId) : null;
+
+  const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
+  const leafPanes = rootPane ? getAllLeafPanes(rootPane) : [];
+  const connectedLeafCount = leafPanes.filter((l) => {
+    const tab = tabs.find((t) => t.id === l.activeTabId);
+    return tab && tab.connected;
+  }).length;
 
   return (
     <div
@@ -97,7 +112,34 @@ export function TerminalWorkspace({ visible }: TerminalWorkspaceProps) {
         </div>
       ) : (
         // Standard Multi-Terminal Split Tree
-        <PaneContainer node={rootPane} visible={visible} />
+        <div className="relative flex h-full w-full flex-col overflow-hidden">
+          {isBroadcast && leafPanes.length > 1 && (
+            <div className="flex shrink-0 items-center justify-between bg-[var(--primary)]/10 px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30 backdrop-blur-sm z-20">
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <Radio size={12} className="animate-pulse text-[var(--primary)] shrink-0" />
+                <span className="font-semibold uppercase tracking-wider">Interconnection Active:</span>
+                <span className="text-[var(--text-secondary)]">
+                  Keystrokes are mirrored to {connectedLeafCount || leafPanes.length} split terminals
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[var(--text-muted)] font-mono hidden md:inline">
+                  Alt+B
+                </span>
+                <button
+                  onClick={() => toggleGroupBroadcast(activeGroupId || undefined)}
+                  className="flex items-center gap-1 rounded bg-[var(--primary)]/20 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black font-medium transition-colors"
+                >
+                  <Unlink size={11} />
+                  <span>Disconnect</span>
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex-1 overflow-hidden">
+            <PaneContainer node={rootPane} visible={visible} />
+          </div>
+        </div>
       )}
 
       {/* Floating Drag Badge that follows the cursor during tab drag */}

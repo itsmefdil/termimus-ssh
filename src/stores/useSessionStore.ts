@@ -59,6 +59,12 @@ interface SessionState {
   pointerPos: { x: number; y: number };
   dragTarget: DragTarget | null;
 
+  // Interconnection / Input Broadcast state (per-group)
+  broadcastGroupIds: string[];
+  toggleGroupBroadcast: (groupId?: string) => void;
+  isGroupBroadcastActive: (groupId?: string) => boolean;
+  getBroadcastTargetSessionIds: (sessionId: string) => string[];
+
   // Session lifecycle
   openSession: (host: Host, newGroup?: boolean) => Promise<string>;
   closeSession: (sessionId: string) => Promise<void>;
@@ -107,6 +113,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   dragSourcePaneId: null,
   pointerPos: { x: 0, y: 0 },
   dragTarget: null,
+
+  broadcastGroupIds: [],
 
   openSession: async (host: Host, newGroup = true) => {
     const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -203,8 +211,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           rootPane: null,
           activePaneId: null,
           maximizedPaneId: null,
+          broadcastGroupIds: [],
         };
       }
+
+      // Clean up broadcast IDs for groups that no longer exist
+      const validBroadcastGroupIds = state.broadcastGroupIds.filter((bgId) =>
+        updatedGroups.some((g) => g.id === bgId)
+      );
 
       // Check if current active group is still alive
       let nextActiveGroup = updatedGroups.find((g) => g.id === state.activeGroupId);
@@ -240,6 +254,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activePaneId: nextActivePaneId,
         activeTabId: nextActiveTabId,
         maximizedPaneId: nextMaximized,
+        broadcastGroupIds: validBroadcastGroupIds,
       };
     });
   },
@@ -485,15 +500,64 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }));
   },
 
+  toggleGroupBroadcast: (groupId?: string) => {
+    set((state) => {
+      const targetGid = groupId || state.activeGroupId;
+      if (!targetGid) return {};
+      const exists = state.broadcastGroupIds.includes(targetGid);
+      return {
+        broadcastGroupIds: exists
+          ? state.broadcastGroupIds.filter((id) => id !== targetGid)
+          : [...state.broadcastGroupIds, targetGid],
+      };
+    });
+  },
+
+  isGroupBroadcastActive: (groupId?: string) => {
+    const { broadcastGroupIds, activeGroupId } = get();
+    const targetGid = groupId || activeGroupId;
+    return targetGid ? broadcastGroupIds.includes(targetGid) : false;
+  },
+
+  getBroadcastTargetSessionIds: (sessionId: string) => {
+    const { groups, tabs, broadcastGroupIds } = get();
+    // 1. Find which group contains this sessionId
+    const group = groups.find((g) => findPaneContainingTab(g.rootPane, sessionId));
+    if (!group) return [sessionId];
+
+    // 2. Check if broadcast is active for this group
+    if (!broadcastGroupIds.includes(group.id)) {
+      return [sessionId];
+    }
+
+    // 3. Get all active tabs currently shown in the leaf panes of this group
+    const leafPanes = getAllLeafPanes(group.rootPane);
+    const activeLeafTabIds = leafPanes.map((l) => l.activeTabId);
+
+    // 4. Filter only connected sessions
+    const connectedTargets = activeLeafTabIds.filter((tid) => {
+      const tab = tabs.find((t) => t.id === tid);
+      return tab && tab.connected;
+    });
+
+    return connectedTargets.length > 0 ? connectedTargets : [sessionId];
+  },
+
   sendTextToActiveSession: async (text: string) => {
-    const { activeTabId, tabs } = get();
+    const { activeTabId, tabs, getBroadcastTargetSessionIds } = get();
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTabId || !activeTab || !activeTab.connected) {
       return false;
     }
     const payload = text.endsWith("\n") ? text : `${text}\n`;
     const bytes = Array.from(new TextEncoder().encode(payload));
-    await api.writeSsh(activeTabId, bytes);
+
+    const targetSessionIds = getBroadcastTargetSessionIds(activeTabId);
+    await Promise.all(
+      targetSessionIds.map((sid) =>
+        api.writeSsh(sid, bytes).catch((e) => console.error("ssh_write broadcast failed:", e))
+      )
+    );
     return true;
   },
 

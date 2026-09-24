@@ -5,6 +5,7 @@ import {
   Minimize2,
   X,
   Loader2,
+  Radio,
 } from "lucide-react";
 import { PaneLeaf } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -22,6 +23,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     tabs,
     rootPane,
     activePaneId,
+    activeGroupId,
     maximizedPaneId,
     focusPane,
     setPaneTab,
@@ -30,11 +32,14 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     splitPane,
     startDragTab,
     openSession,
+    isGroupBroadcastActive,
+    toggleGroupBroadcast,
   } = useSessionStore();
 
   const hosts = useHostStore((s) => s.hosts);
   const isFocused = activePaneId === pane.id;
   const isMaximized = maximizedPaneId === pane.id;
+  const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
 
   // The pane header is only shown when the workspace is actually split into multiple panes.
   // When there's only 1 pane (or when a pane is maximized), the top window Header acts as the sole tab bar,
@@ -111,9 +116,13 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       onClick={() => focusPane(pane.id)}
       className={`relative flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] transition-all ${
         isSplit
-          ? isFocused
-            ? "ring-1 ring-[var(--primary)]/70 shadow-sm"
-            : "ring-1 ring-[var(--border)]/40 hover:ring-[var(--border)]"
+          ? isBroadcast
+            ? isFocused
+              ? "ring-2 ring-[var(--primary)] shadow-md"
+              : "ring-1 ring-[var(--primary)]/50"
+            : isFocused
+              ? "ring-1 ring-[var(--primary)]/70 shadow-sm"
+              : "ring-1 ring-[var(--border)]/40 hover:ring-[var(--border)]"
           : ""
       }`}
     >
@@ -194,12 +203,38 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
                   {activeTab?.hostAddress}
                 </span>
+                {isBroadcast && (
+                  <span className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[9px] font-mono font-medium text-[var(--primary)] border border-[var(--primary)]/30 shrink-0">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-ping shrink-0" />
+                    SYNC
+                  </span>
+                )}
               </div>
             )}
           </div>
 
-          {/* Right: Quick Split & Window Controls */}
-          <div className="flex items-center gap-0.5 pl-1 shrink-0">
+          {/* Right: Quick Split, Interconnection & Window Controls */}
+          <div className="flex items-center gap-1 pl-1 shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleGroupBroadcast(activeGroupId || undefined);
+              }}
+              title={
+                isBroadcast
+                  ? "Broadcast Input Active — Click to disconnect terminals (Alt+B)"
+                  : "Interconnect Terminals — Broadcast input to all split panes (Alt+B)"
+              }
+              className={`flex h-5 items-center gap-1 rounded px-1.5 text-xs transition-colors ${
+                isBroadcast
+                  ? "bg-[var(--primary)] text-black font-semibold shadow-sm hover:opacity-90"
+                  : "text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--primary)]"
+              }`}
+            >
+              <Radio size={11} className={isBroadcast ? "animate-pulse" : ""} />
+              <span className="text-[10px] font-mono">{isBroadcast ? "SYNC ON" : "SYNC"}</span>
+            </button>
+            <div className="h-3 w-[1px] bg-[var(--border)] shrink-0 mx-0.5" />
             <button
               onClick={(e) => {
                 e.stopPropagation();

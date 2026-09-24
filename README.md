@@ -6,11 +6,11 @@
 
 <p align="center">
   <strong>The Local-First, Zero-Knowledge SSH Client & Server Management Suite</strong><br>
-  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.1.2</strong>
+  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.1.3</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.1.2-00d2b4.svg?style=flat&label=version" alt="Version v0.1.2" /></a>
+  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.1.3-00d2b4.svg?style=flat&label=version" alt="Version v0.1.3" /></a>
   <a href="https://github.com/itsmefdil/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen" alt="Platforms" />
@@ -51,6 +51,8 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 ### 🖥️ Native Terminal Experience
 - **Async Rust SSH Engine**: Multi-tab terminal powered by `russh` and `@xterm/xterm` 6.
+- **Split Panes & Multi-Terminal Workspace**: Split terminals in any direction with resizable dividers, tab drag-and-drop, and auto-grouping tabs (`Web Server (2)`).
+- **Terminal Interconnection & Input Broadcast**: One-click synchronized input across all split panes (`SYNC` toggle / `Alt+B`) to broadcast keystrokes and run commands simultaneously across multiple servers.
 - **Session Geometry Protection**: Background tabs stay mounted without collapsing to 0×0 geometry, preventing remote `htop`, `vim`, and curses TUIs from corrupting due to bogus SIGWINCH events.
 - **Quick Connect**: Instant fuzzy-search launcher accessible anywhere with `Ctrl+K`.
 
@@ -112,7 +114,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 | Component | Version | Package |
 |---|---|---|
-| Desktop Client (Tauri + Rust + React) | `v0.1.2` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
+| Desktop Client (Tauri + Rust + React) | `v0.1.3` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
 | Self-Hosted Sync Server (Go) | `v0.1.2` | [`ghcr.io/itsmefdil/termimus-sync`](https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync) |
 
 ---

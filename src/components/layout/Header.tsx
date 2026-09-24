@@ -8,6 +8,7 @@ import {
   Minus,
   Square,
   Copy,
+  Radio,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
@@ -33,6 +34,7 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
     isDraggingTab,
     draggedTabId,
     reorderGroups,
+    broadcastGroupIds,
   } = useSessionStore();
 
   const [isMaximized, setIsMaximized] = useState(false);
@@ -209,6 +211,14 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
                   />
                 )}
                 <span className="truncate">{displayLabel}</span>
+                {broadcastGroupIds.includes(group.id) && (
+                  <span title="Input Broadcast Active (Interconnected)" className="flex items-center">
+                    <Radio
+                      size={11}
+                      className="text-[var(--primary)] animate-pulse shrink-0"
+                    />
+                  </span>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
