@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/itsmefdil/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.2.1-00d2b4.svg?style=flat&label=version" alt="Version v0.2.1" /></a>
-  <a href="https://github.com/itsmefdil/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
+  <a href="https://github.com/termimus/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.2.1-00d2b4.svg?style=flat&label=version" alt="Version v0.2.1" /></a>
+  <a href="https://github.com/termimus/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://github.com/termimus/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen" alt="Platforms" />
   <img src="https://img.shields.io/badge/encryption-AES--256--GCM-teal" alt="AES-256-GCM" />
   <img src="https://img.shields.io/badge/kdf-Argon2id-purple" alt="Argon2id" />
@@ -35,7 +35,7 @@ Unlike SaaS alternatives that force cloud account registration, Termimus is **Lo
 
 ## 📥 Download
 
-Prebuilt installers for every release are published automatically to the **[GitHub Releases](https://github.com/itsmefdil/termimus-ssh/releases/latest)** page — no build tools required.
+Prebuilt installers for every release are published automatically to the **[GitHub Releases](https://github.com/termimus/termimus-ssh/releases/latest)** page — no build tools required.
 
 | Platform | Installer | Notes |
 |---|---|---|
@@ -108,7 +108,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
                  ▼                                                 │
       ┌─────────────────────────────────────────────────────────────────┐
       │             Termimus Sync Server (Go / Docker)                  │
-      │         ghcr.io/itsmefdil/termimus-sync:latest                  │
+      │         ghcr.io/termimus/termimus-sync:latest                   │
       │                                                                 │
       │  - Pure Go SQLite (modernc.org/sqlite, zero CGO)                │
       │  - Blind Relay Storage (< 20MB RAM)                             │
@@ -120,8 +120,8 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 | Component | Version | Package |
 |---|---|---|
-| Desktop Client (Tauri + Rust + React) | `v0.2.1` | [Releases](https://github.com/itsmefdil/termimus-ssh/releases) |
-| Self-Hosted Sync Server (Go) | `v0.1.2` | [`ghcr.io/itsmefdil/termimus-sync`](https://github.com/itsmefdil/termimus-ssh/pkgs/container/termimus-sync) |
+| Desktop Client (Tauri + Rust + React) | `v0.2.1` | [Releases](https://github.com/termimus/termimus-ssh/releases) |
+| Self-Hosted Sync Server (Go) | `v0.1.2` | [`ghcr.io/termimus/termimus-sync`](https://github.com/termimus/termimus-ssh/pkgs/container/termimus-sync) |
 
 ---
 
@@ -142,7 +142,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 #### Start Desktop App
 ```bash
 # Clone the repository
-git clone https://github.com/itsmefdil/termimus-ssh.git
+git clone https://github.com/termimus/termimus-ssh.git
 cd termimus-ssh
 
 # Install frontend dependencies
@@ -172,7 +172,7 @@ docker run -d \
   -v termimus_data:/data \
   -e TERMIMUS_AUTH_TOKEN="your-secure-random-token" \
   --restart unless-stopped \
-  ghcr.io/itsmefdil/termimus-sync:latest
+  ghcr.io/termimus/termimus-sync:latest
 ```
 
 #### Option B: Docker Compose
@@ -180,7 +180,7 @@ Create `docker-compose.yml`:
 ```yaml
 services:
   termimus-sync:
-    image: ghcr.io/itsmefdil/termimus-sync:latest
+    image: ghcr.io/termimus/termimus-sync:latest
     container_name: termimus-sync
     restart: unless-stopped
     ports:

@@ -130,10 +130,10 @@ Because `releaseDraft: true` is set in the workflow, all installer files are att
 ### Steps to Publish
 
 1. Open the **Actions** tab and wait for the **"Build and Release Desktop App"** workflow to show a green ✅ across all three platforms:
-   `https://github.com/itsmefdil/termimus-ssh/actions`
+   `https://github.com/termimus/termimus-ssh/actions`
 
 2. Open the **Releases** tab:
-   `https://github.com/itsmefdil/termimus-ssh/releases`
+   `https://github.com/termimus/termimus-ssh/releases`
 
 3. You will see a **Draft** release titled `Termimus vX.Y.Z` with all installer files already attached (`.deb`, `.AppImage`, `.dmg`, `.msi`, `.exe`).
 
@@ -173,7 +173,7 @@ docker run -d \
   -p 8080:8080 \
   -v termimus_data:/data \
   -e TERMIMUS_AUTH_TOKEN="your-secure-token" \
-  ghcr.io/itsmefdil/termimus-sync:vX.Y.Z
+  ghcr.io/termimus/termimus-sync:vX.Y.Z
 ```
 ```
 

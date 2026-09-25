@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/itsmefdil/termimus-sync:latest
+    image: ghcr.io/termimus/termimus-sync:latest
     container_name: termimus-sync
     restart: unless-stopped
     ports:
