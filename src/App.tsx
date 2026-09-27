@@ -22,6 +22,7 @@ import { ConfirmModal } from "./components/layout/ConfirmModal";
 import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
 import { useAutoLock } from "./hooks/useAutoLock";
+import { useLiveSync } from "./hooks/useLiveSync";
 
 // Helper component for native-feel stacked views:
 // Keeps views mounted in the DOM once visited, switching visibility in 0ms
@@ -76,6 +77,9 @@ function App() {
 
   // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
   useAutoLock();
+
+  // Background real-time WebSocket live sync manager
+  useLiveSync();
 
   // Enforce small minimum window size (480x360) so users can snap/tile to half screen
   // on sub-1080p displays (e.g. 1366x768 half is 683px, 1280x800 half is 640px).

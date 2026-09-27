@@ -32,7 +32,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "ok",
 		"service": "termimus-sync-server",
-		"version": "0.1.0",
+		"version": "0.2.3",
 	})
 }
 
@@ -180,18 +180,10 @@ func (h *Handler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.hub.Register(conn)
+	client := h.hub.RegisterClient(conn)
 
-	// Keep-alive read loop
-	go func() {
-		defer h.hub.Unregister(conn)
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-		}
-	}()
+	go client.WritePump()
+	go client.ReadPump()
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

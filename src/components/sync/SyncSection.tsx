@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Cloud,
   CloudUpload,
@@ -23,6 +23,7 @@ export function SyncSection() {
     authToken,
     syncPassword,
     deviceName,
+    deviceId,
     autoSync,
     lastSyncAt,
     latestServerVersion,
@@ -89,66 +90,6 @@ export function SyncSection() {
       setPulling(false);
     }
   }
-
-  // WebSocket live sync connection
-  useEffect(() => {
-    if (!autoSync || !serverUrl) return;
-
-    let wsUrl = serverUrl.replace(/^http/, "ws");
-    if (authToken) {
-      wsUrl += `/api/v1/sync/ws?token=${encodeURIComponent(authToken)}`;
-    } else {
-      wsUrl += `/api/v1/sync/ws`;
-    }
-
-    let socket: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      try {
-        socket = new WebSocket(wsUrl);
-
-        socket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "SYNC_UPDATED") {
-              const myDeviceId = deviceName.toLowerCase().replace(/[^a-z0-9]/g, "-");
-              if (data.device_id && data.device_id === myDeviceId) {
-                // Ignore broadcast originated from this device itself
-                return;
-              }
-              // Remote update detected from another device — auto pull changes
-              handlePull();
-            }
-          } catch {
-            // ignore parse errors
-          }
-        };
-
-        socket.onclose = () => {
-          if (autoSync) {
-            reconnectTimeout = setTimeout(connect, 5000);
-          }
-        };
-
-        socket.onerror = () => {
-          socket?.close();
-        };
-      } catch {
-        // ignore connection failure
-      }
-    }
-
-    connect();
-
-    return () => {
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (socket) {
-        socket.onclose = null;
-        socket.close();
-      }
-    };
-  }, [autoSync, serverUrl, authToken]);
 
   const dockerCommand = `docker run -d \\
   --name termimus-sync \\
@@ -345,8 +286,9 @@ export function SyncSection() {
                 placeholder="e.g. Work ThinkPad"
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
               />
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                Identifies which device pushed the latest changes.
+              <p className="text-[10px] text-[var(--text-muted)] mt-1 flex items-center justify-between">
+                <span>Identifies which device pushed the latest changes.</span>
+                <span className="font-mono text-[9px] opacity-60">ID: {deviceId ? deviceId.slice(0, 8) : "..."}</span>
               </p>
             </div>
           </div>

@@ -3,12 +3,16 @@ import { persist } from "zustand/middleware";
 import { api, ImportSummary } from "../lib/api";
 import { useHostStore } from "./useHostStore";
 import { useKeychainStore } from "./useKeychainStore";
+import { useSnippetStore } from "./useSnippetStore";
+import { useTunnelStore } from "./useTunnelStore";
+import { useKnownHostsStore } from "./useKnownHostsStore";
 
 interface SyncState {
   serverUrl: string;
   authToken: string;
   syncPassword: string;
   deviceName: string;
+  deviceId: string;
   autoSync: boolean;
   lastSyncAt: string | null;
   latestServerVersion: number | null;
@@ -19,6 +23,7 @@ interface SyncState {
   setAuthToken: (token: string) => void;
   setSyncPassword: (pw: string) => void;
   setDeviceName: (name: string) => void;
+  getDeviceId: () => string;
   setAutoSync: (enabled: boolean) => void;
 
   testConnection: () => Promise<{ ok: boolean; version?: string; revision?: number; error?: string }>;
@@ -42,6 +47,10 @@ export const useSyncStore = create<SyncState>()(
       authToken: "",
       syncPassword: "",
       deviceName: getDefaultDeviceName(),
+      deviceId:
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       autoSync: false,
       lastSyncAt: null,
       latestServerVersion: null,
@@ -52,6 +61,17 @@ export const useSyncStore = create<SyncState>()(
       setAuthToken: (token) => set({ authToken: token.trim() }),
       setSyncPassword: (pw) => set({ syncPassword: pw }),
       setDeviceName: (name) => set({ deviceName: name.trim() }),
+      getDeviceId: () => {
+        let id = get().deviceId;
+        if (!id) {
+          id =
+            typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+              ? crypto.randomUUID()
+              : `dev-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+          set({ deviceId: id });
+        }
+        return id;
+      },
       setAutoSync: (autoSync) => set({ autoSync }),
 
       testConnection: async () => {
@@ -101,9 +121,10 @@ export const useSyncStore = create<SyncState>()(
       },
 
       push: async () => {
-        const { serverUrl, authToken, syncPassword, deviceName } = get();
+        const { serverUrl, authToken, syncPassword, deviceName, getDeviceId } = get();
         if (!serverUrl) throw new Error("Server URL is not configured");
 
+        const deviceId = getDeviceId();
         set({ syncStatus: "syncing", lastError: null });
 
         try {
@@ -119,7 +140,7 @@ export const useSyncStore = create<SyncState>()(
             method: "POST",
             headers,
             body: JSON.stringify({
-              device_id: deviceName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+              device_id: deviceId,
               device_name: deviceName,
               encrypted_blob: encryptedBlob,
             }),
@@ -182,6 +203,9 @@ export const useSyncStore = create<SyncState>()(
           // Refresh UI stores after data import
           useHostStore.getState().refresh();
           useKeychainStore.getState().refresh();
+          useSnippetStore.getState().refresh();
+          useTunnelStore.getState().refresh();
+          useKnownHostsStore.getState().refresh();
 
           const now = new Date().toISOString();
           set({
