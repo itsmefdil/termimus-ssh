@@ -163,6 +163,13 @@ func (d *DB) SaveRevision(deviceID, deviceName, encryptedBlob string) (int64, er
 		return 0, fmt.Errorf("failed to insert sync revision: %w", err)
 	}
 
+	// Prune older revisions to prevent database inflation (retain last 15 revisions)
+	const maxRevisionsToKeep = int64(15)
+	if nextVersion > maxRevisionsToKeep {
+		cutoffVersion := nextVersion - maxRevisionsToKeep
+		_, _ = tx.Exec(`DELETE FROM sync_revisions WHERE version <= ?`, cutoffVersion)
+	}
+
 	// Upsert device
 	_, err = tx.Exec(`
 		INSERT INTO devices (id, name, last_sync_at, created_at)

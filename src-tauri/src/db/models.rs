@@ -222,6 +222,13 @@ pub struct KnownHost {
     pub last_seen_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tombstone {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub deleted_at: String,
+}
+
 /// A full-fidelity snapshot of the encrypted database, used for backup/restore.
 /// Credentials remain as their AES-256-GCM ciphertext/nonce — the file carries
 /// no plaintext secrets by itself; the receiving vault still needs the same
@@ -240,6 +247,8 @@ pub struct BackupBundle {
     pub port_forwards: Vec<PortForwardRule>,
     pub snippets: Vec<Snippet>,
     pub known_hosts: Vec<KnownHost>,
+    #[serde(default)]
+    pub tombstones: Vec<Tombstone>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

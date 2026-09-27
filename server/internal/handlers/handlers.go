@@ -88,9 +88,11 @@ type PushBundleRequest struct {
 
 // ── POST /api/v1/sync/bundle ────────────────────────────────────────────────
 func (h *Handler) PostBundle(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 25MB to prevent memory exhaustion DoS
+	r.Body = http.MaxBytesReader(w, r.Body, 25*1024*1024)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "Failed to read request body")
+		writeError(w, http.StatusBadRequest, "Failed to read request body or payload exceeds 25MB limit")
 		return
 	}
 	defer r.Body.Close()

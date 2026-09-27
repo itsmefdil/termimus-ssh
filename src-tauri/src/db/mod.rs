@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary};
+use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -105,6 +105,13 @@ impl Database {
                 last_seen_at TEXT NOT NULL,
                 PRIMARY KEY (address, port)
             );
+
+            CREATE TABLE IF NOT EXISTS tombstones (
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                PRIMARY KEY (entity_type, entity_id)
+            );
             ",
         )?;
 
@@ -118,6 +125,63 @@ impl Database {
         let _ = conn.execute("ALTER TABLE credentials ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN last_connected_at TEXT", []);
 
+        Ok(())
+    }
+
+    pub fn record_tombstone(&self, entity_type: &str, entity_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![entity_type, entity_id, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_tombstone(&self, tombstone: &Tombstone) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=MAX(deleted_at, excluded.deleted_at)",
+            params![tombstone.entity_type, tombstone.entity_id, tombstone.deleted_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_tombstones(&self) -> Result<Vec<Tombstone>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT entity_type, entity_id, deleted_at FROM tombstones")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Tombstone {
+                entity_type: row.get(0)?,
+                entity_id: row.get(1)?,
+                deleted_at: row.get(2)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn is_tombstoned(&self, entity_type: &str, entity_id: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT deleted_at FROM tombstones WHERE entity_type = ?1 AND entity_id = ?2")?;
+        let mut rows = stmt.query(params![entity_type, entity_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn remove_tombstone(&self, entity_type: &str, entity_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM tombstones WHERE entity_type = ?1 AND entity_id = ?2", params![entity_type, entity_id])?;
         Ok(())
     }
 
@@ -217,6 +281,12 @@ impl Database {
     pub fn delete_host(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('host', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
         Ok(())
     }
 
@@ -366,6 +436,12 @@ impl Database {
     pub fn delete_credential(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM credentials WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('credential', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
         Ok(())
     }
 
@@ -427,6 +503,12 @@ impl Database {
     pub fn delete_folder(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('folder', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
         Ok(())
     }
 
@@ -508,6 +590,12 @@ impl Database {
     pub fn delete_port_forward(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('port_forward', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
         Ok(())
     }
 
@@ -560,7 +648,51 @@ impl Database {
     pub fn delete_snippet(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('snippet', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
         Ok(())
+    }
+
+    pub fn get_snippet(&self, id: &str) -> Result<Option<Snippet>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, command, tags, created_at, updated_at FROM snippets WHERE id = ?1"
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let tags_str: String = row.get(3)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+            Ok(Some(Snippet {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                command: row.get(2)?,
+                tags,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_folder(&self, id: &str) -> Result<Option<Folder>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at FROM folders WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Folder {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                parent_id: row.get(2)?,
+                created_at: row.get(3)?,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get_known_host(&self, address: &str, port: u16) -> Result<Option<KnownHost>> {
@@ -683,6 +815,7 @@ impl Database {
             port_forwards: self.list_port_forwards()?,
             snippets: self.list_snippets()?,
             known_hosts: self.list_known_hosts()?,
+            tombstones: self.list_tombstones()?,
         })
     }
 
@@ -704,7 +837,8 @@ impl Database {
             let conn = self.conn.lock().unwrap();
             if replace_all {
                 conn.execute_batch(
-                    "DELETE FROM known_hosts;
+                    "DELETE FROM tombstones;
+                     DELETE FROM known_hosts;
                      DELETE FROM snippets;
                      DELETE FROM port_forwards;
                      DELETE FROM hosts;
@@ -738,19 +872,103 @@ impl Database {
             // credentials already in the vault remain readable.
         }
 
+        // Process incoming tombstones during merge or replace
+        for ts in &bundle.tombstones {
+            self.save_tombstone(ts)?;
+            if !replace_all {
+                match ts.entity_type.as_str() {
+                    "host" => {
+                        if let Ok(Some(local)) = self.get_host(&ts.entity_id) {
+                            if local.updated_at <= ts.deleted_at {
+                                let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("DELETE FROM hosts WHERE id = ?1", params![&ts.entity_id]);
+                            }
+                        }
+                    }
+                    "folder" => {
+                        let conn = self.conn.lock().unwrap();
+                        let _ = conn.execute("DELETE FROM folders WHERE id = ?1", params![&ts.entity_id]);
+                    }
+                    "credential" => {
+                        let conn = self.conn.lock().unwrap();
+                        let _ = conn.execute("DELETE FROM credentials WHERE id = ?1", params![&ts.entity_id]);
+                    }
+                    "snippet" => {
+                        if let Ok(Some(local)) = self.get_snippet(&ts.entity_id) {
+                            if local.updated_at <= ts.deleted_at {
+                                let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("DELETE FROM snippets WHERE id = ?1", params![&ts.entity_id]);
+                            }
+                        }
+                    }
+                    "port_forward" => {
+                        let conn = self.conn.lock().unwrap();
+                        let _ = conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![&ts.entity_id]);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         for folder in &bundle.folders {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("folder", &folder.id) {
+                    if folder.created_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("folder", &folder.id);
+                    }
+                }
+            }
             self.save_folder(folder)?;
         }
         for cred in &bundle.credentials {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("credential", &cred.id) {
+                    let cred_time = if !cred.updated_at.is_empty() { &cred.updated_at } else { &cred.created_at };
+                    if cred_time <= &del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("credential", &cred.id);
+                    }
+                }
+            }
             self.save_credential(cred)?;
         }
         for host in &bundle.hosts {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("host", &host.id) {
+                    if host.updated_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("host", &host.id);
+                    }
+                }
+            }
             self.save_host(host)?;
         }
         for rule in &bundle.port_forwards {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("port_forward", &rule.id) {
+                    if rule.created_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("port_forward", &rule.id);
+                    }
+                }
+            }
             self.save_port_forward(rule)?;
         }
         for snippet in &bundle.snippets {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("snippet", &snippet.id) {
+                    if snippet.updated_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("snippet", &snippet.id);
+                    }
+                }
+            }
             self.save_snippet(snippet)?;
         }
 

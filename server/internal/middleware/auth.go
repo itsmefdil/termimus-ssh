@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -25,16 +26,16 @@ func (a *AuthMiddleware) Wrap(next http.HandlerFunc) http.HandlerFunc {
 		// 1. Check Authorization header: Bearer <token>
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			if strings.TrimSpace(token) == a.requiredToken {
+			token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+			if subtle.ConstantTimeCompare([]byte(token), []byte(a.requiredToken)) == 1 {
 				next(w, r)
 				return
 			}
 		}
 
 		// 2. Check query parameter: ?token=<token> (needed for WebSockets)
-		if qToken := r.URL.Query().Get("token"); qToken != "" {
-			if strings.TrimSpace(qToken) == a.requiredToken {
+		if qToken := strings.TrimSpace(r.URL.Query().Get("token")); qToken != "" {
+			if subtle.ConstantTimeCompare([]byte(qToken), []byte(a.requiredToken)) == 1 {
 				next(w, r)
 				return
 			}
