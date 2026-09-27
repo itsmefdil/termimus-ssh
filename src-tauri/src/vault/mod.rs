@@ -121,14 +121,9 @@ impl VaultManager {
         Ok(hex)
     }
 
-    /// Encrypt plaintext using AES-256-GCM
-    pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let key_guard = self.derived_key.read().unwrap();
-        let key_bytes = key_guard
-            .as_ref()
-            .ok_or_else(|| "Vault is locked. Unlock vault first.".to_string())?;
-
-        let cipher = Aes256Gcm::new_from_slice(key_bytes)
+    /// Encrypt plaintext using AES-256-GCM with a specified key
+    pub fn encrypt_with_key(key: &[u8; 32], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let cipher = Aes256Gcm::new_from_slice(key)
             .map_err(|e| format!("Cipher init failed: {e}"))?;
 
         let mut nonce_bytes = [0u8; 12];
@@ -142,14 +137,9 @@ impl VaultManager {
         Ok((ciphertext, nonce_bytes.to_vec()))
     }
 
-    /// Decrypt ciphertext using AES-256-GCM
-    pub fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>, String> {
-        let key_guard = self.derived_key.read().unwrap();
-        let key_bytes = key_guard
-            .as_ref()
-            .ok_or_else(|| "Vault is locked. Unlock vault first.".to_string())?;
-
-        let cipher = Aes256Gcm::new_from_slice(key_bytes)
+    /// Decrypt ciphertext using AES-256-GCM with a specified key
+    pub fn decrypt_with_key(key: &[u8; 32], ciphertext: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let cipher = Aes256Gcm::new_from_slice(key)
             .map_err(|e| format!("Cipher init failed: {e}"))?;
 
         if nonce_bytes.len() != 12 {
@@ -162,6 +152,26 @@ impl VaultManager {
             .map_err(|e| format!("Decryption error: {e}"))?;
 
         Ok(plaintext)
+    }
+
+    /// Encrypt plaintext using AES-256-GCM
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let key_guard = self.derived_key.read().unwrap();
+        let key_bytes = key_guard
+            .as_ref()
+            .ok_or_else(|| "Vault is locked. Unlock vault first.".to_string())?;
+
+        Self::encrypt_with_key(key_bytes, plaintext)
+    }
+
+    /// Decrypt ciphertext using AES-256-GCM
+    pub fn decrypt(&self, ciphertext: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let key_guard = self.derived_key.read().unwrap();
+        let key_bytes = key_guard
+            .as_ref()
+            .ok_or_else(|| "Vault is locked. Unlock vault first.".to_string())?;
+
+        Self::decrypt_with_key(key_bytes, ciphertext, nonce_bytes)
     }
 
     pub fn verification_payload() -> &'static [u8] {

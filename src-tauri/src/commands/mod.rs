@@ -211,8 +211,6 @@ pub fn vault_change_password(
         .ok_or_else(|| "Vault not initialized".to_string())?;
     let old_key = VaultManager::derive_key(&old_password, &salt)?;
 
-    // Temporarily set old key to verify.
-    state.vault.set_key(old_key);
     let verifier_ct = state
         .db
         .get_vault_meta("verifier_ciphertext")
@@ -224,10 +222,9 @@ pub fn vault_change_password(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Corrupted vault state".to_string())?;
 
-    match state.vault.decrypt(&verifier_ct, &verifier_nonce) {
+    match VaultManager::decrypt_with_key(&old_key, &verifier_ct, &verifier_nonce) {
         Ok(decrypted) if decrypted == VaultManager::verification_payload() => {}
         _ => {
-            state.vault.lock();
             return Err("Current password is incorrect.".to_string());
         }
     }
@@ -236,50 +233,57 @@ pub fn vault_change_password(
     let new_salt = VaultManager::generate_salt();
     let new_key = VaultManager::derive_key(&new_password, &new_salt)?;
 
-    // 3. Re-encrypt every credential with the new key.
+    // 3. Re-encrypt every decryptable credential with the new key.
     let credentials = state.db.list_credentials().map_err(|e| e.to_string())?;
+    let mut updated_credentials = Vec::new();
+
     for mut cred in credentials {
-        // Decrypt with old key (already set on vault).
-        let plaintext = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
-        // Temporarily set new key to encrypt.
-        state.vault.set_key(new_key);
-        let (new_ct, new_nonce) = state.vault.encrypt(&plaintext)?;
-        cred.ciphertext = new_ct;
-        cred.nonce = new_nonce;
+        // Try decrypting credential with old_key. If an orphaned/incompatible entry exists
+        // (e.g. from an earlier interrupted re-encryption), safely skip it rather than bricking
+        // the user from ever changing their master password.
+        match VaultManager::decrypt_with_key(&old_key, &cred.ciphertext, &cred.nonce) {
+            Ok(plaintext) => {
+                let (new_ct, new_nonce) = VaultManager::encrypt_with_key(&new_key, &plaintext)?;
+                cred.ciphertext = new_ct;
+                cred.nonce = new_nonce;
 
-        // Re-encrypt passphrase if present.
-        if let (Some(pp_ct), Some(pp_nonce)) = (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
-            // Decrypt passphrase with old key.
-            state.vault.set_key(old_key);
-            let pp_plain = state.vault.decrypt(pp_ct, pp_nonce)?;
-            state.vault.set_key(new_key);
-            let (new_pp_ct, new_pp_nonce) = state.vault.encrypt(&pp_plain)?;
-            cred.passphrase_ciphertext = Some(new_pp_ct);
-            cred.passphrase_nonce = Some(new_pp_nonce);
-        } else {
-            state.vault.set_key(new_key);
+                // Re-encrypt passphrase if present.
+                if let (Some(pp_ct), Some(pp_nonce)) = (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
+                    if let Ok(pp_plain) = VaultManager::decrypt_with_key(&old_key, pp_ct, pp_nonce) {
+                        let (new_pp_ct, new_pp_nonce) = VaultManager::encrypt_with_key(&new_key, &pp_plain)?;
+                        cred.passphrase_ciphertext = Some(new_pp_ct);
+                        cred.passphrase_nonce = Some(new_pp_nonce);
+                    }
+                }
+
+                cred.updated_at = chrono::Utc::now().to_rfc3339();
+                updated_credentials.push(cred);
+            }
+            Err(e) => {
+                eprintln!("[Vault] Warning: skipping undecryptable credential during re-keying (id: {}): {}", cred.id, e);
+            }
         }
-
-        state.db.save_credential(&cred).map_err(|e| e.to_string())?;
     }
 
-    // 4. Update salt + verifier in vault_meta.
-    state
-        .db
-        .set_vault_meta("salt", &new_salt)
-        .map_err(|e| e.to_string())?;
+    // 4. Generate new verifier payload with new key.
     let (new_verifier_ct, new_verifier_nonce) =
-        state.vault.encrypt(VaultManager::verification_payload())?;
+        VaultManager::encrypt_with_key(&new_key, VaultManager::verification_payload())?;
+
+    // 5. Atomically commit salt, verifiers, and re-encrypted credentials in one SQLite transaction.
     state
         .db
-        .set_vault_meta("verifier_ciphertext", &new_verifier_ct)
-        .map_err(|e| e.to_string())?;
-    state
-        .db
-        .set_vault_meta("verifier_nonce", &new_verifier_nonce)
+        .rekey_vault(
+            &new_salt,
+            &new_verifier_ct,
+            &new_verifier_nonce,
+            &updated_credentials,
+        )
         .map_err(|e| e.to_string())?;
 
-    // 5. Clear stale keyring entry so user must re-enable with new key.
+    // 6. Update in-memory vault key so ongoing operations remain unlocked.
+    state.vault.set_key(new_key);
+
+    // 7. Clear stale keyring entry so user must re-enable with new key.
     let _ = vault_keyring_clear();
 
     Ok(())

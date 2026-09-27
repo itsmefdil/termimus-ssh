@@ -64,6 +64,12 @@ export function SyncSection() {
   }
 
   async function handlePush() {
+    if (!syncPassword.trim()) {
+      useSyncStore.setState({
+        lastError: "Sync Passphrase is required to ensure zero-knowledge E2EE encryption before uploading to relay.",
+      });
+      return;
+    }
     setPushing(true);
     setPushSuccess(null);
     try {
@@ -78,6 +84,12 @@ export function SyncSection() {
   }
 
   async function handlePull() {
+    if (!syncPassword.trim()) {
+      useSyncStore.setState({
+        lastError: "Sync Passphrase is required to decrypt the sync bundle from server.",
+      });
+      return;
+    }
     setPulling(true);
     setPullSummary(null);
     try {
@@ -228,14 +240,14 @@ export function SyncSection() {
             {/* Auth Token */}
             <div>
               <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                Auth Token (TERMIMUS_AUTH_TOKEN)
+                Auth Token (If configured on server)
               </label>
               <div className="relative">
                 <input
                   type={showToken ? "text" : "password"}
                   value={authToken}
                   onChange={(e) => setAuthToken(e.target.value)}
-                  placeholder="Bearer token set on server..."
+                  placeholder="Bearer token if set via TERMIMUS_AUTH_TOKEN..."
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none font-mono"
                 />
                 <button
@@ -246,12 +258,16 @@ export function SyncSection() {
                   {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                Leave blank if your relay runs in open mode without a token.
+              </p>
             </div>
 
             {/* Sync Passphrase */}
             <div>
-              <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                Sync Passphrase (E2E Encryption)
+              <label className="mb-1 block font-medium text-[var(--text-muted)] flex items-center justify-between">
+                <span>Sync Passphrase (E2E Encryption) *</span>
+                <span className="text-[10px] text-[var(--primary)] font-mono">E2EE Enforced</span>
               </label>
               <div className="relative">
                 <input
@@ -270,7 +286,7 @@ export function SyncSection() {
                 </button>
               </div>
               <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                Used to encrypt the snapshot bundle with AES-256-GCM before uploading.
+                Mandatory for Zero-Knowledge E2EE. Encrypts all host IPs, tags, and snippets with AES-256-GCM + Argon2id.
               </p>
             </div>
 

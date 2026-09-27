@@ -266,6 +266,50 @@ impl Database {
         Ok(())
     }
 
+    /// Atomically commit a vault re-keying operation:
+    /// Updates salt, verifier_ciphertext, verifier_nonce, and all re-encrypted credentials
+    /// in a single SQLite transaction so the database is never left in a partial state.
+    pub fn rekey_vault(
+        &self,
+        new_salt: &[u8],
+        new_verifier_ct: &[u8],
+        new_verifier_nonce: &[u8],
+        updated_credentials: &[Credential],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        tx.execute(
+            "INSERT INTO vault_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params!["salt", new_salt],
+        )?;
+        tx.execute(
+            "INSERT INTO vault_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params!["verifier_ciphertext", new_verifier_ct],
+        )?;
+        tx.execute(
+            "INSERT INTO vault_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params!["verifier_nonce", new_verifier_nonce],
+        )?;
+
+        for cred in updated_credentials {
+            tx.execute(
+                "UPDATE credentials SET ciphertext = ?1, nonce = ?2, passphrase_ciphertext = ?3, passphrase_nonce = ?4, updated_at = ?5 WHERE id = ?6",
+                params![
+                    cred.ciphertext,
+                    cred.nonce,
+                    cred.passphrase_ciphertext,
+                    cred.passphrase_nonce,
+                    cred.updated_at,
+                    cred.id,
+                ],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn get_credential(&self, id: &str) -> Result<Option<Credential>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(

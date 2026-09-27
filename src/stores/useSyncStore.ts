@@ -72,7 +72,13 @@ export const useSyncStore = create<SyncState>()(
         }
         return id;
       },
-      setAutoSync: (autoSync) => set({ autoSync }),
+      setAutoSync: (autoSync) => {
+        if (autoSync && !get().syncPassword.trim()) {
+          set({ lastError: "Please set a Sync Passphrase before enabling Live Sync to ensure end-to-end encryption." });
+          return;
+        }
+        set({ autoSync });
+      },
 
       testConnection: async () => {
         const { serverUrl, authToken } = get();
@@ -96,7 +102,10 @@ export const useSyncStore = create<SyncState>()(
           const statusRes = await fetch(`${serverUrl}/api/v1/sync/status`, { headers });
           if (!statusRes.ok) {
             if (statusRes.status === 401) {
-              return { ok: false, error: "Authentication failed: invalid token" };
+              return {
+                ok: false,
+                error: "Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)",
+              };
             }
             return { ok: false, error: `Sync endpoint returned HTTP ${statusRes.status}` };
           }
@@ -124,12 +133,17 @@ export const useSyncStore = create<SyncState>()(
         const { serverUrl, authToken, syncPassword, deviceName, getDeviceId } = get();
         if (!serverUrl) throw new Error("Server URL is not configured");
 
+        const cleanPassword = syncPassword.trim();
+        if (!cleanPassword) {
+          throw new Error("Sync Passphrase is required. Termimus enforces zero-knowledge E2EE encryption before uploading to the relay.");
+        }
+
         const deviceId = getDeviceId();
         set({ syncStatus: "syncing", lastError: null });
 
         try {
           // Export full database into an encrypted envelope using the sync password
-          const encryptedBlob = await api.exportBackup(syncPassword.trim() || undefined);
+          const encryptedBlob = await api.exportBackup(cleanPassword);
 
           const headers: HeadersInit = { "Content-Type": "application/json" };
           if (authToken) {
@@ -147,6 +161,9 @@ export const useSyncStore = create<SyncState>()(
           });
 
           if (!res.ok) {
+            if (res.status === 401) {
+              throw new Error("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)");
+            }
             const errBody = await res.json().catch(() => ({}));
             throw new Error(errBody.error || `Server returned HTTP ${res.status}`);
           }
@@ -183,6 +200,9 @@ export const useSyncStore = create<SyncState>()(
 
           const res = await fetch(`${serverUrl}/api/v1/sync/bundle`, { headers });
           if (!res.ok) {
+            if (res.status === 401) {
+              throw new Error("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)");
+            }
             const errBody = await res.json().catch(() => ({}));
             throw new Error(errBody.error || `Server returned HTTP ${res.status}`);
           }
@@ -193,11 +213,16 @@ export const useSyncStore = create<SyncState>()(
             throw new Error("No sync data found on server");
           }
 
+          const cleanPassword = syncPassword.trim();
+          if (!cleanPassword) {
+            throw new Error("Sync Passphrase is required to decrypt the incoming sync bundle.");
+          }
+
           // Import and merge into local database safely (replace_all = false preserves TOFU known hosts)
           const summary = await api.importBackup(
             encryptedBlob,
             false,
-            syncPassword.trim() || undefined
+            cleanPassword
           );
 
           // Refresh UI stores after data import

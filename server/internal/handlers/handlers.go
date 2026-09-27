@@ -124,6 +124,16 @@ func (h *Handler) PostBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce zero-knowledge E2EE policy: server accepts only version 2 encrypted bundles
+	var envelope struct {
+		Encrypted     bool `json:"encrypted"`
+		FormatVersion int  `json:"format_version"`
+	}
+	if err := json.Unmarshal([]byte(blobStr), &envelope); err != nil || !envelope.Encrypted || envelope.FormatVersion != 2 {
+		writeError(w, http.StatusBadRequest, "Server policy: only version 2 encrypted bundles (E2EE) are accepted to prevent plaintext leakage")
+		return
+	}
+
 	if req.DeviceID == "" {
 		req.DeviceID = "unknown-device"
 	}
