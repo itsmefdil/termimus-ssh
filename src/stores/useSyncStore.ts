@@ -7,6 +7,13 @@ import { useSnippetStore } from "./useSnippetStore";
 import { useTunnelStore } from "./useTunnelStore";
 import { useKnownHostsStore } from "./useKnownHostsStore";
 
+export interface ConnectedDevice {
+  id: string;
+  name: string;
+  last_sync_at: string;
+  created_at: string;
+}
+
 interface SyncState {
   serverUrl: string;
   authToken: string;
@@ -29,6 +36,7 @@ interface SyncState {
   testConnection: () => Promise<{ ok: boolean; version?: string; revision?: number; error?: string }>;
   push: () => Promise<number>;
   pull: () => Promise<ImportSummary>;
+  getDevices: () => Promise<ConnectedDevice[]>;
 }
 
 function getDefaultDeviceName() {
@@ -245,6 +253,23 @@ export const useSyncStore = create<SyncState>()(
           const msg = String(e);
           set({ syncStatus: "error", lastError: msg });
           throw e;
+        }
+      },
+
+      getDevices: async () => {
+        const { serverUrl, authToken } = get();
+        if (!serverUrl) return [];
+        try {
+          const headers: HeadersInit = {};
+          if (authToken) {
+            headers["Authorization"] = `Bearer ${authToken}`;
+          }
+          const res = await fetch(`${serverUrl}/api/v1/sync/devices`, { headers });
+          if (!res.ok) return [];
+          const data = await res.json();
+          return (data.devices as ConnectedDevice[]) || [];
+        } catch {
+          return [];
         }
       },
     }),

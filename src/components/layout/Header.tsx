@@ -9,9 +9,11 @@ import {
   Square,
   Copy,
   Radio,
+  Cloud,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
+import { useSyncStore } from "../../stores/useSyncStore";
 import { getAllSessionIdsInTree } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 
@@ -34,9 +36,10 @@ interface HeaderProps {
   onSelectTab?: () => void;
   onToggleSidebar?: () => void;
   isSidebarCollapsed?: boolean;
+  onOpenSyncSettings?: () => void;
 }
 
-export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: HeaderProps) {
+export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed, onOpenSyncSettings }: HeaderProps) {
   const {
     tabs,
     groups,
@@ -442,6 +445,9 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
         {/* Drag region filler */}
         <div data-tauri-drag-region className="h-full flex-1 cursor-default" />
 
+        {/* Sync Status Indicator */}
+        <HeaderSyncIndicator onOpenSyncSettings={onOpenSyncSettings} />
+
         {/* Windows / Linux Window Controls (Omitted on macOS) */}
         {!isMac && (
           <div data-tauri-drag-region="false" className="flex h-full items-stretch shrink-0">
@@ -470,5 +476,58 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed }: Hea
         )}
       </header>
     </>
+  );
+}
+
+function HeaderSyncIndicator({ onOpenSyncSettings }: { onOpenSyncSettings?: () => void }) {
+  const syncStatus = useSyncStore((s) => s.syncStatus);
+  const serverUrl = useSyncStore((s) => s.serverUrl);
+  const latestServerVersion = useSyncStore((s) => s.latestServerVersion);
+  const lastError = useSyncStore((s) => s.lastError);
+
+  if (!serverUrl) return null;
+
+  return (
+    <button
+      data-tauri-drag-region="false"
+      onClick={onOpenSyncSettings}
+      title={
+        syncStatus === "syncing"
+          ? "Syncing data with relay..."
+          : syncStatus === "connected"
+          ? `Relay Connected (Rev #${latestServerVersion ?? 0}) • Click to open Sync Settings`
+          : syncStatus === "error"
+          ? `Sync Error: ${lastError ?? "Connection failed"} • Click to check settings`
+          : "Sync Relay Configured • Click to open Sync Settings"
+      }
+      className={`flex h-7 items-center gap-1.5 rounded-md px-2 mr-1 text-[11px] font-mono transition-colors ${
+        syncStatus === "syncing"
+          ? "text-[var(--primary)] bg-[var(--primary)]/10"
+          : syncStatus === "connected"
+          ? "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]"
+          : syncStatus === "error"
+          ? "text-[var(--danger)] bg-[var(--danger)]/10"
+          : "text-[var(--text-muted)] hover:bg-[var(--surface-container)]"
+      }`}
+    >
+      {syncStatus === "syncing" ? (
+        <Loader2 size={13} className="animate-spin text-[var(--primary)]" />
+      ) : syncStatus === "connected" ? (
+        <div className="relative flex items-center justify-center">
+          <Cloud size={14} className="text-[var(--primary)]" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+        </div>
+      ) : syncStatus === "error" ? (
+        <div className="relative flex items-center justify-center">
+          <Cloud size={14} className="text-[var(--danger)]" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
+        </div>
+      ) : (
+        <Cloud size={14} className="opacity-60" />
+      )}
+      <span className="hidden xl:inline text-[10px] uppercase font-semibold tracking-wider">
+        {syncStatus === "syncing" ? "Syncing" : syncStatus === "connected" ? "Synced" : syncStatus === "error" ? "Sync Err" : "Sync"}
+      </span>
+    </button>
   );
 }

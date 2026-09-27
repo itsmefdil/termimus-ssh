@@ -141,6 +141,7 @@ function App() {
         onSelectTab={() => handleNavChange("terminal")}
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
         isSidebarCollapsed={isSidebarCollapsed}
+        onOpenSyncSettings={() => handleNavChange("settings")}
       />
 
       {/* Main Workspace Body */}

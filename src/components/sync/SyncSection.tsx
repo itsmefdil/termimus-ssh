@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Cloud,
   CloudUpload,
@@ -13,8 +13,9 @@ import {
   Eye,
   EyeOff,
   Radio,
+  Laptop,
 } from "lucide-react";
-import { useSyncStore } from "../../stores/useSyncStore";
+import { useSyncStore, ConnectedDevice } from "../../stores/useSyncStore";
 import { ImportSummary } from "../../lib/api";
 
 export function SyncSection() {
@@ -37,6 +38,7 @@ export function SyncSection() {
     testConnection,
     push,
     pull,
+    getDevices,
   } = useSyncStore();
 
   const [testing, setTesting] = useState(false);
@@ -48,9 +50,32 @@ export function SyncSection() {
   const [pulling, setPulling] = useState(false);
   const [pullSummary, setPullSummary] = useState<ImportSummary | null>(null);
 
+  const [devices, setDevices] = useState<ConnectedDevice[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+
   const [showToken, setShowToken] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [copiedDocker, setCopiedDocker] = useState(false);
+
+  const loadDevices = useCallback(async () => {
+    if (!serverUrl) {
+      setDevices([]);
+      return;
+    }
+    setLoadingDevices(true);
+    try {
+      const list = await getDevices();
+      setDevices(list);
+    } finally {
+      setLoadingDevices(false);
+    }
+  }, [serverUrl, getDevices]);
+
+  useEffect(() => {
+    if (serverUrl) {
+      loadDevices();
+    }
+  }, [serverUrl, loadDevices]);
 
   async function handleTest() {
     setTesting(true);
@@ -58,6 +83,9 @@ export function SyncSection() {
     try {
       const res = await testConnection();
       setTestResult(res);
+      if (res.ok) {
+        loadDevices();
+      }
     } finally {
       setTesting(false);
     }
@@ -75,6 +103,7 @@ export function SyncSection() {
     try {
       const version = await push();
       setPushSuccess(version);
+      loadDevices();
       setTimeout(() => setPushSuccess(null), 4000);
     } catch {
       // error is tracked in store
@@ -95,6 +124,7 @@ export function SyncSection() {
     try {
       const summary = await pull();
       setPullSummary(summary);
+      loadDevices();
       setTimeout(() => setPullSummary(null), 5000);
     } catch {
       // error is tracked in store
@@ -398,6 +428,93 @@ export function SyncSection() {
           </label>
         </div>
       </div>
+
+      {/* ── Connected Devices Card ────────────────────────────────────────── */}
+      {serverUrl && (
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
+            <div className="space-y-0.5">
+              <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Laptop size={15} className="text-[var(--primary)]" />
+                <span>Connected Devices</span>
+                {devices.length > 0 && (
+                  <span className="rounded bg-[var(--surface-container)] px-1.5 py-0.2 text-[10px] font-mono text-[var(--text-muted)]">
+                    {devices.length}
+                  </span>
+                )}
+              </h4>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Devices registered with your self-hosted relay.
+              </p>
+            </div>
+            <button
+              onClick={loadDevices}
+              disabled={loadingDevices}
+              title="Refresh device list"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-white hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+            >
+              <RotateCw size={12} className={loadingDevices ? "animate-spin" : ""} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          <div className="p-5">
+            {devices.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] text-center py-4">
+                {loadingDevices ? "Loading devices..." : "No devices recorded on this relay yet. Push a backup from this device to register it."}
+              </p>
+            ) : (
+              <div className="divide-y divide-[var(--border)]">
+                {devices.map((dev) => {
+                  const isThisDevice = dev.id === deviceId;
+                  return (
+                    <div
+                      key={dev.id}
+                      className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`flex h-8 w-8 rounded-lg items-center justify-center shrink-0 ${
+                            isThisDevice
+                              ? "bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/20"
+                              : "bg-[var(--surface-container)] text-[var(--text-muted)]"
+                          }`}
+                        >
+                          <Laptop size={15} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-[var(--text-primary)] truncate">
+                              {dev.name}
+                            </span>
+                            {isThisDevice && (
+                              <span className="rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[9px] font-mono font-medium text-[var(--primary)] border border-[var(--primary)]/20">
+                                THIS DEVICE
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-mono text-[10px] text-[var(--text-muted)] block truncate mt-0.5">
+                            ID: {dev.id}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-[var(--text-muted)] block uppercase font-mono">
+                          Last active
+                        </span>
+                        <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+                          {new Date(dev.last_sync_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(dev.last_sync_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Docker Self-Hosting Guide Box ──────────────────────────────────── */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 shadow-sm space-y-3">
