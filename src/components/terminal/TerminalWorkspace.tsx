@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus } from "lucide-react";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
 import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
+import { SnippetSidebar } from "../snippets/SnippetSidebar";
 
 interface TerminalWorkspaceProps {
   visible: boolean;
@@ -61,6 +63,11 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
         e.preventDefault();
         toggleGroupBroadcast(activeGroupId || undefined);
       }
+      // Alt+S toggles snippets right sidebar
+      if (e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        useSnippetStore.getState().toggleSidebar();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -71,6 +78,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
     rootPane && maximizedPaneId ? findPaneById(rootPane, maximizedPaneId) : null;
 
   const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
+  const isSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const leafPanes = rootPane ? getAllLeafPanes(rootPane) : [];
   const connectedLeafCount = leafPanes.filter((l) => {
     const tab = tabs.find((t) => t.id === l.activeTabId);
@@ -110,92 +118,98 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
 
   return (
     <div
-      className="absolute inset-0 select-none"
+      className="absolute inset-0 flex overflow-hidden select-none"
       style={{
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 10 : 0,
       }}
     >
-      {tabs.length === 0 || !rootPane ? (
-        <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] gap-3 p-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)]">
-            <TerminalIcon size={22} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">No Active Terminal Sessions</p>
-            <p className="text-xs text-[var(--text-muted)] mt-1">
-              Select a host to connect or launch a multi-server Workspace Preset
-            </p>
-          </div>
-          {onOpenWorkspaces && (
-            <button
-              onClick={onOpenWorkspaces}
-              className="mt-1 flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[var(--primary)]/90 transition-all shadow-sm active:scale-95"
-            >
-              <Layers size={13} />
-              <span>Open Workspaces</span>
-            </button>
-          )}
-        </div>
-      ) : maximizedPane ? (
-        // Maximized Single Pane Mode
-        <div className="relative flex h-full w-full flex-col overflow-hidden">
-          <div className="flex items-center justify-between bg-[var(--surface-container)] px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30">
-            <span className="font-mono text-[11px] font-medium">
-              Pane Maximized — Press ESC or click Restore to exit
-            </span>
-            <button
-              onClick={() => toggleMaximizePane(maximizedPane.id)}
-              className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)]/25 transition-colors"
-            >
-              <Minimize2 size={12} />
-              <span>Restore Split</span>
-            </button>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <PaneView pane={maximizedPane} visible={visible} />
-          </div>
-        </div>
-      ) : (
-        // Standard Multi-Terminal Split Tree
-        <div className="relative flex h-full w-full flex-col overflow-hidden">
-          {isBroadcast && leafPanes.length > 1 && (
-            <div className="flex shrink-0 items-center justify-between bg-[var(--primary)]/10 px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30 backdrop-blur-sm z-20">
-              <div className="flex items-center gap-2 font-mono text-[11px]">
-                <Radio size={12} className="animate-pulse text-[var(--primary)] shrink-0" />
-                <span className="font-semibold uppercase tracking-wider">Interconnection Active:</span>
-                <span className="text-[var(--text-secondary)]">
-                  Keystrokes are mirrored to {connectedLeafCount || leafPanes.length} split terminals
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSaveCurrentSplit}
-                  className="flex items-center gap-1 rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors"
-                  title="Save this split screen as a Workspace Preset"
-                >
-                  <BookmarkPlus size={11} />
-                  <span>Save Preset</span>
-                </button>
-                <span className="text-[10px] text-[var(--text-muted)] font-mono hidden md:inline">
-                  Alt+B
-                </span>
-                <button
-                  onClick={() => toggleGroupBroadcast(activeGroupId || undefined)}
-                  className="flex items-center gap-1 rounded bg-[var(--primary)]/20 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black font-medium transition-colors"
-                >
-                  <Unlink size={11} />
-                  <span>Disconnect</span>
-                </button>
-              </div>
+      {/* Main Terminal Viewport Area */}
+      <div className="relative flex flex-1 flex-col overflow-hidden min-w-0">
+        {tabs.length === 0 || !rootPane ? (
+          <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] gap-3 p-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)]">
+              <TerminalIcon size={22} />
             </div>
-          )}
-          <div className="flex-1 overflow-hidden">
-            <PaneContainer node={rootPane} visible={visible} />
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">No Active Terminal Sessions</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                Select a host to connect or launch a multi-server Workspace Preset
+              </p>
+            </div>
+            {onOpenWorkspaces && (
+              <button
+                onClick={onOpenWorkspaces}
+                className="mt-1 flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[var(--primary)]/90 transition-all shadow-sm active:scale-95"
+              >
+                <Layers size={13} />
+                <span>Open Workspaces</span>
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        ) : maximizedPane ? (
+          // Maximized Single Pane Mode
+          <div className="relative flex h-full w-full flex-col overflow-hidden">
+            <div className="flex items-center justify-between bg-[var(--surface-container)] px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30">
+              <span className="font-mono text-[11px] font-medium">
+                Pane Maximized — Press ESC or click Restore to exit
+              </span>
+              <button
+                onClick={() => toggleMaximizePane(maximizedPane.id)}
+                className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)]/25 transition-colors"
+              >
+                <Minimize2 size={12} />
+                <span>Restore Split</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <PaneView pane={maximizedPane} visible={visible} />
+            </div>
+          </div>
+        ) : (
+          // Standard Multi-Terminal Split Tree
+          <div className="relative flex h-full w-full flex-col overflow-hidden">
+            {isBroadcast && leafPanes.length > 1 && (
+              <div className="flex shrink-0 items-center justify-between bg-[var(--primary)]/10 px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30 backdrop-blur-sm z-20">
+                <div className="flex items-center gap-2 font-mono text-[11px]">
+                  <Radio size={12} className="animate-pulse text-[var(--primary)] shrink-0" />
+                  <span className="font-semibold uppercase tracking-wider">Interconnection Active:</span>
+                  <span className="text-[var(--text-secondary)]">
+                    Keystrokes are mirrored to {connectedLeafCount || leafPanes.length} split terminals
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSaveCurrentSplit}
+                    className="flex items-center gap-1 rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors"
+                    title="Save this split screen as a Workspace Preset"
+                  >
+                    <BookmarkPlus size={11} />
+                    <span>Save Preset</span>
+                  </button>
+                  <span className="text-[10px] text-[var(--text-muted)] font-mono hidden md:inline">
+                    Alt+B
+                  </span>
+                  <button
+                    onClick={() => toggleGroupBroadcast(activeGroupId || undefined)}
+                    className="flex items-center gap-1 rounded bg-[var(--primary)]/20 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black font-medium transition-colors"
+                  >
+                    <Unlink size={11} />
+                    <span>Disconnect</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="flex-1 overflow-hidden">
+              <PaneContainer node={rootPane} visible={visible} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Snippets Right Sidebar (Collapsible) */}
+      {isSidebarOpen && <SnippetSidebar />}
 
       {/* Floating Drag Badge that follows the cursor during tab drag */}
       {isDraggingTab && draggedTab && (

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Terminal } from "lucide-react";
+import { X, Terminal, Lock, Eye, EyeOff } from "lucide-react";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { SnippetInput } from "../../lib/api";
 
@@ -9,6 +9,8 @@ export function SnippetModal() {
   const [title, setTitle] = useState("");
   const [command, setCommand] = useState("");
   const [tagInput, setTagInput] = useState("");
+  const [isSecret, setIsSecret] = useState(false);
+  const [showCommandText, setShowCommandText] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,11 +18,17 @@ export function SnippetModal() {
     if (editingSnippet) {
       setTitle(editingSnippet.title);
       setCommand(editingSnippet.command);
-      setTagInput(editingSnippet.tags.join(", "));
+      const isSec = editingSnippet.tags.some((t) => t.toLowerCase() === "secret");
+      setIsSecret(isSec);
+      setShowCommandText(!isSec);
+      const cleanTags = editingSnippet.tags.filter((t) => t.toLowerCase() !== "secret");
+      setTagInput(cleanTags.join(", "));
     } else {
       setTitle("");
       setCommand("");
       setTagInput("");
+      setIsSecret(false);
+      setShowCommandText(true);
     }
     setError(null);
   }, [editingSnippet, isModalOpen]);
@@ -43,7 +51,11 @@ export function SnippetModal() {
     const tags = tagInput
       .split(",")
       .map((t) => t.trim())
-      .filter((t) => t.length > 0);
+      .filter((t) => t.length > 0 && t.toLowerCase() !== "secret");
+
+    if (isSecret) {
+      tags.push("secret");
+    }
 
     const input: SnippetInput = {
       title: title.trim(),
@@ -87,6 +99,52 @@ export function SnippetModal() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {/* Snippet Type Selector: Standard vs Secret */}
+          <div>
+            <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
+              Snippet Type
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSecret(false);
+                  setShowCommandText(true);
+                }}
+                className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-all ${
+                  !isSecret
+                    ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)] shadow-xs"
+                    : "border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <Terminal size={16} className={!isSecret ? "text-[var(--primary)]" : "text-[var(--text-muted)]"} />
+                <div>
+                  <p className="font-semibold text-xs leading-none">Standard</p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">Normal command / script</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSecret(true);
+                  setShowCommandText(false);
+                }}
+                className={`flex items-center gap-2 rounded-lg border p-2.5 text-left transition-all ${
+                  isSecret
+                    ? "border-[var(--warning)] bg-[var(--warning)]/15 text-[var(--warning)] shadow-xs"
+                    : "border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <Lock size={16} className={isSecret ? "text-[var(--warning)]" : "text-[var(--text-muted)]"} />
+                <div>
+                  <p className="font-semibold text-xs leading-none">Secret / Password</p>
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">Masked with eye toggle (••••)</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block font-medium text-[var(--text-muted)]">
               Snippet Title *
@@ -96,23 +154,49 @@ export function SnippetModal() {
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Docker Restart, Check Disk Usage, Update Packages"
+              placeholder="e.g. Sudo Root Auth, Docker Restart, Database Migration"
               className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--accent)] focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="mb-1 block font-medium text-[var(--text-muted)]">
-              Command / Script *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-medium text-[var(--text-muted)]">
+                {isSecret ? "Secret Command / Password *" : "Command / Script *"}
+              </label>
+              {isSecret && (
+                <button
+                  type="button"
+                  onClick={() => setShowCommandText((prev) => !prev)}
+                  className="flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {showCommandText ? <EyeOff size={13} /> : <Eye size={13} />}
+                  <span>{showCommandText ? "Hide text" : "Reveal text"}</span>
+                </button>
+              )}
+            </div>
             <textarea
               required
-              rows={6}
+              rows={isSecret ? 3 : 6}
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder="e.g.&#10;sudo apt update && sudo apt upgrade -y&#10;docker compose down && docker compose up -d"
+              placeholder={
+                isSecret
+                  ? "Enter password, secret token, or sensitive command..."
+                  : "e.g.\nsudo apt update && sudo apt upgrade -y\ndocker compose down && docker compose up -d"
+              }
+              style={
+                {
+                  WebkitTextSecurity: isSecret && !showCommandText ? "disc" : "none",
+                } as React.CSSProperties
+              }
               className="w-full font-mono rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--accent)] focus:outline-none"
             />
+            {isSecret && (
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                Secret snippet text is masked by default in the UI. Click the eye button to reveal.
+              </p>
+            )}
           </div>
 
           <div>

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import {
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Braces,
   Plus,
   X,
   Loader2,
@@ -13,6 +16,7 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
+import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { getAllSessionIdsInTree } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
@@ -37,9 +41,16 @@ interface HeaderProps {
   onToggleSidebar?: () => void;
   isSidebarCollapsed?: boolean;
   onOpenSyncSettings?: () => void;
+  isTerminalActive?: boolean;
 }
 
-export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed, onOpenSyncSettings }: HeaderProps) {
+export function Header({
+  onSelectTab,
+  onToggleSidebar,
+  isSidebarCollapsed,
+  onOpenSyncSettings,
+  isTerminalActive,
+}: HeaderProps) {
   const {
     tabs,
     groups,
@@ -52,6 +63,9 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed, onOpe
     reorderGroups,
     broadcastGroupIds,
   } = useSessionStore();
+
+  const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
+  const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
 
   const [isMaximized, setIsMaximized] = useState(false);
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
@@ -444,6 +458,32 @@ export function Header({ onSelectTab, onToggleSidebar, isSidebarCollapsed, onOpe
 
         {/* Drag region filler */}
         <div data-tauri-drag-region className="h-full flex-1 cursor-default" />
+
+        {/* Snippets Right Sidebar Collapse/Expand Toggle Button (Visible when Terminal is active) */}
+        {isTerminalActive && (
+          <button
+            data-tauri-drag-region="false"
+            onClick={toggleSnippetSidebar}
+            title={
+              isSnippetSidebarOpen
+                ? "Collapse snippets sidebar (Alt+S)"
+                : "Expand snippets sidebar (Alt+S)"
+            }
+            className={`flex h-7 items-center gap-1.5 rounded-md px-2 mr-1 text-[11px] font-mono transition-colors ${
+              isSnippetSidebarOpen
+                ? "text-[var(--primary)] bg-[var(--primary)]/15 border border-[var(--primary)]/30 font-medium"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]"
+            }`}
+          >
+            <Braces size={13} className={isSnippetSidebarOpen ? "text-[var(--primary)]" : ""} />
+            <span className="hidden sm:inline">Snippets</span>
+            {isSnippetSidebarOpen ? (
+              <PanelRightClose size={13} className="opacity-70" />
+            ) : (
+              <PanelRightOpen size={13} className="opacity-70" />
+            )}
+          </button>
+        )}
 
         {/* Sync Status Indicator */}
         <HeaderSyncIndicator onOpenSyncSettings={onOpenSyncSettings} />

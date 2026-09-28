@@ -19,6 +19,7 @@ import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
 import { KeychainView } from "./components/keychain/KeychainView";
 import { ConfirmModal } from "./components/layout/ConfirmModal";
+import { SnippetModal } from "./components/snippets/SnippetModal";
 import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
 import { useAutoLock } from "./hooks/useAutoLock";
@@ -142,6 +143,7 @@ function App() {
         onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
         isSidebarCollapsed={isSidebarCollapsed}
         onOpenSyncSettings={() => handleNavChange("settings")}
+        isTerminalActive={showTerminal}
       />
 
       {/* Main Workspace Body */}
@@ -219,6 +221,9 @@ function App() {
 
       {/* Host Create/Edit Modal */}
       <HostModal onOpenKeychain={() => handleNavChange("keychain")} />
+
+      {/* Snippet Create/Edit Modal */}
+      <SnippetModal />
 
       {/* App-wide Delete & Action Confirmation Modal */}
       <ConfirmModal />

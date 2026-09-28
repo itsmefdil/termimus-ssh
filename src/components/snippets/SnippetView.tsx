@@ -9,11 +9,15 @@ import {
   AlertCircle,
   Loader2,
   CheckCircle2,
+  Lock,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
-import { SnippetModal } from "./SnippetModal";
 import { Snippet } from "../../lib/api";
 
 export function SnippetView() {
@@ -78,8 +82,6 @@ export function SnippetView() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none">
-      <SnippetModal />
-
       {/* Header */}
       <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
         <div>
@@ -195,13 +197,59 @@ const SnippetCard = memo(function SnippetCard({
   onEdit,
   onDelete,
 }: SnippetCardProps) {
+  const isSecret = snippet.tags.some((t) => t.toLowerCase() === "secret");
+  const [isRevealed, setIsRevealed] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const displayTags = snippet.tags.filter((t) => t.toLowerCase() !== "secret");
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(snippet.command);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors shadow-xs">
       <div className="flex min-w-0 items-center justify-between mb-2">
-        <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)] pr-2">
-          {snippet.title}
-        </h3>
+        <div className="flex items-center gap-2 min-w-0 pr-2">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">
+            {snippet.title}
+          </h3>
+          {isSecret && (
+            <span
+              title="Secret snippet: command text is masked by default"
+              className="flex items-center gap-1 rounded bg-[var(--warning)]/15 border border-[var(--warning)]/30 px-1.5 py-0.5 text-[9px] font-mono text-[var(--warning)] font-semibold shrink-0"
+            >
+              <Lock size={9} />
+              <span>SECRET</span>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1 shrink-0">
+          {isSecret && (
+            <button
+              onClick={() => setIsRevealed((prev) => !prev)}
+              title={isRevealed ? "Hide secret command" : "Reveal secret command"}
+              className={`rounded p-1 transition-colors ${
+                isRevealed
+                  ? "text-[var(--warning)] bg-[var(--warning)]/15"
+                  : "text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+              }`}
+            >
+              {isRevealed ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            title={isCopied ? "Copied!" : "Copy command"}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white transition-colors"
+          >
+            {isCopied ? <Check size={13} className="text-[var(--success)]" /> : <Copy size={13} />}
+          </button>
           <button
             onClick={() => onEdit(snippet)}
             title="Edit snippet"
@@ -219,18 +267,26 @@ const SnippetCard = memo(function SnippetCard({
         </div>
       </div>
 
-      <pre className="mb-3 max-h-24 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-all">
-        {snippet.command}
-      </pre>
+      <div className="mb-3 max-h-24 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5">
+        {isSecret && !isRevealed ? (
+          <div className="font-sans text-xs tracking-widest text-[var(--text-muted)] font-bold select-none py-1">
+            ••••••••••••••••••••••••••••
+          </div>
+        ) : (
+          <pre className="text-[11px] font-mono text-[var(--text-primary)] whitespace-pre-wrap break-all select-text">
+            {snippet.command}
+          </pre>
+        )}
+      </div>
 
-      {snippet.tags.length > 0 && (
+      {displayTags.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1">
-          {snippet.tags.map((tag) => (
+          {displayTags.map((tag) => (
             <span
               key={tag}
               className="rounded-full bg-[var(--background)] border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]"
             >
-              {tag}
+              #{tag}
             </span>
           ))}
         </div>

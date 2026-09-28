@@ -87,6 +87,10 @@ interface SessionState {
   setSessionConnected: (sessionId: string, connected: boolean) => void;
   setSessionError: (sessionId: string, error: string) => void;
   sendTextToActiveSession: (text: string) => Promise<boolean>;
+  sendSnippetToTerminals: (
+    text: string,
+    targetMode?: "auto" | "broadcast" | "single"
+  ) => Promise<{ ok: boolean; count: number; targets: string[] }>;
 
   // Pane & Split layout operations
   focusPane: (paneId: string) => void;
@@ -658,6 +662,54 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       )
     );
     return true;
+  },
+
+  sendSnippetToTerminals: async (
+    text: string,
+    targetMode: "auto" | "broadcast" | "single" = "auto"
+  ) => {
+    const { activeTabId, tabs, activeGroupId, groups, getBroadcastTargetSessionIds } = get();
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (!activeTabId || !activeTab || !activeTab.connected) {
+      return { ok: false, count: 0, targets: [] };
+    }
+
+    const payload = text.endsWith("\n") ? text : `${text}\n`;
+    const bytes = Array.from(new TextEncoder().encode(payload));
+
+    let targetSessionIds: string[] = [];
+
+    if (targetMode === "single") {
+      targetSessionIds = [activeTabId];
+    } else if (targetMode === "broadcast") {
+      const currentGroup = groups.find((g) => g.id === activeGroupId);
+      if (currentGroup) {
+        const leafPanes = getAllLeafPanes(currentGroup.rootPane);
+        targetSessionIds = leafPanes
+          .map((l) => l.activeTabId)
+          .filter((tid) => {
+            const t = tabs.find((tab) => tab.id === tid);
+            return t && t.connected;
+          });
+      }
+      if (targetSessionIds.length === 0) {
+        targetSessionIds = [activeTabId];
+      }
+    } else {
+      targetSessionIds = getBroadcastTargetSessionIds(activeTabId);
+    }
+
+    await Promise.all(
+      targetSessionIds.map((sid) =>
+        api.writeSsh(sid, bytes).catch((e) => console.error("ssh_write snippet failed:", e))
+      )
+    );
+
+    const targetLabels = targetSessionIds.map(
+      (sid) => tabs.find((t) => t.id === sid)?.hostLabel || sid
+    );
+
+    return { ok: true, count: targetSessionIds.length, targets: targetLabels };
   },
 
   startDragTab: (tabId: string, sourcePaneId: string | null, x: number, y: number) => {
