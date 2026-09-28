@@ -15,6 +15,7 @@ import {
   Copy,
   RefreshCw,
   Check,
+  Loader2,
 } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -28,11 +29,12 @@ import { DistroBadge } from "./DistroBadge";
 const PING_INTERVAL_MS = 20000;
 
 interface HostListProps {
+  onOpenTerminal?: () => void;
   onOpenSftp: () => void;
   onOpenTunnels: () => void;
 }
 
-export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
+export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostListProps) {
   const {
     hosts,
     folders,
@@ -46,7 +48,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
     deleteFolder,
   } = useHostStore();
 
-  const { openSession } = useSessionStore();
+  const { openSession, tabs } = useSessionStore();
   const { connectRemote } = useSftpStore();
   const { pingAll, statusByHostId } = usePingStore();
 
@@ -177,9 +179,10 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
 
   const handleConnect = useCallback(
     async (host: Host) => {
+      onOpenTerminal?.();
       await openSession(host);
     },
-    [openSession]
+    [onOpenTerminal, openSession]
   );
 
   const handleSftpClick = useCallback(
@@ -238,71 +241,108 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
       <FolderModal />
 
       {/* Top Search & Actions Bar */}
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-1 items-center gap-2">
-          {/* Search bar */}
-          <div className="relative min-w-[220px] max-w-sm flex-1">
-            <Search
-              size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search host, IP, label, tag..."
-              className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-container)] py-2 pl-9 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none transition-colors"
-            />
-          </div>
+      <div className="mb-6 flex flex-col gap-2.5 min-w-0">
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            {/* Search bar */}
+            <div className="relative min-w-[160px] sm:min-w-[220px] max-w-xs flex-1 shrink-0">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search host, IP, label, tag..."
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-container)] py-2 pl-9 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+              />
+            </div>
 
-          {/* Tag filters (only at root) */}
-          {!selectedFolderId && allTags.length > 0 && (
-            <div className="hidden sm:flex items-center gap-1 overflow-x-auto py-0.5">
-              <button
-                onClick={() => setSelectedTag("All")}
-                className={`rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors ${
-                  selectedTag === "All"
-                    ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] border border-[var(--primary)]/30"
-                    : "bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-white"
-                }`}
-              >
-                All
-              </button>
-              {allTags.map((tag) => (
+            {/* Tag filters (desktop single-row with horizontal scroll) */}
+            {!selectedFolderId && allTags.length > 0 && (
+              <div className="hidden lg:flex items-center gap-1 overflow-x-auto min-w-0 flex-1 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <button
-                  key={tag}
-                  onClick={() => setSelectedTag(tag)}
-                  className={`rounded-lg px-2.5 py-1.5 text-xs font-mono transition-colors ${
-                    selectedTag === tag
+                  type="button"
+                  onClick={() => setSelectedTag("All")}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-mono shrink-0 transition-colors cursor-pointer ${
+                    selectedTag === "All"
                       ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] border border-[var(--primary)]/30"
                       : "bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-white"
                   }`}
                 >
-                  {tag}
+                  All
                 </button>
-              ))}
-            </div>
-          )}
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setSelectedTag(tag)}
+                    className={`rounded-lg px-2.5 py-1.5 text-xs font-mono shrink-0 transition-colors cursor-pointer ${
+                      selectedTag === tag
+                        ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] border border-[var(--primary)]/30"
+                        : "bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-white"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons: New Group & New Host (always fully visible, never compressed) */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={openCreateFolderModal}
+              className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors shadow-sm shrink-0 cursor-pointer"
+            >
+              <FolderPlus size={14} />
+              <span>New Group</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm shrink-0 cursor-pointer"
+            >
+              <Plus size={15} strokeWidth={2.5} />
+              <span>New Host</span>
+            </button>
+          </div>
         </div>
 
-        {/* Action Buttons: New Group & New Host */}
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={openCreateFolderModal}
-            className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors shadow-sm"
-          >
-            <FolderPlus size={14} />
-            <span>New Group</span>
-          </button>
-
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm"
-          >
-            <Plus size={15} strokeWidth={2.5} />
-            <span>New Host</span>
-          </button>
-        </div>
+        {/* Tag filters (shown on narrower screens so search & action buttons don't squeeze) */}
+        {!selectedFolderId && allTags.length > 0 && (
+          <div className="flex lg:hidden items-center gap-1 overflow-x-auto min-w-0 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => setSelectedTag("All")}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-mono shrink-0 transition-colors cursor-pointer ${
+                selectedTag === "All"
+                  ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] border border-[var(--primary)]/30"
+                  : "bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-white"
+              }`}
+            >
+              All
+            </button>
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setSelectedTag(tag)}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-mono shrink-0 transition-colors cursor-pointer ${
+                  selectedTag === tag
+                    ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] border border-[var(--primary)]/30"
+                    : "bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-white"
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* VIEW 1: DRILLED DOWN INTO A GROUP */}
@@ -377,6 +417,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                 <HostCard
                   key={host.id}
                   host={host}
+                  isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
                   isOnline={statusByHostId[host.id]?.online ?? true}
                   isMenuOpen={activeMenuHostId === host.id}
                   onConnect={handleConnect}
@@ -457,6 +498,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                   <HostCard
                     key={host.id}
                     host={host}
+                    isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
                     isOnline={statusByHostId[host.id]?.online ?? true}
                     isMenuOpen={activeMenuHostId === host.id}
                     onConnect={handleConnect}
@@ -740,6 +782,7 @@ const FolderCard = memo(function FolderCard({
 
 interface HostCardProps {
   host: Host;
+  isConnecting?: boolean;
   isOnline: boolean;
   isMenuOpen: boolean;
   onConnect: (host: Host) => void;
@@ -753,6 +796,7 @@ interface HostCardProps {
 
 const HostCard = memo(function HostCard({
   host,
+  isConnecting,
   isOnline,
   isMenuOpen,
   onConnect,
@@ -779,9 +823,14 @@ const HostCard = memo(function HostCard({
             <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
               {host.label}
             </h3>
-            {!isOnline && (
+            {isConnecting ? (
+              <span className="flex items-center gap-1 text-[10px] text-[var(--primary)] font-mono font-medium">
+                <Loader2 size={10} className="animate-spin text-[var(--primary)] shrink-0" />
+                <span>Connecting...</span>
+              </span>
+            ) : !isOnline ? (
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)] shrink-0" title="Offline" />
-            )}
+            ) : null}
           </div>
           <p className="truncate text-xs text-[var(--text-muted)] font-mono">
             ssh, {host.username}

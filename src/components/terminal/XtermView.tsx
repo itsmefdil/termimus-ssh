@@ -349,12 +349,17 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       api
         .connectSsh(hostId, sessionId, cols, rows)
         .then(() => {
+          const entry = terminalPool.get(sessionId);
+          if (entry) entry.hasConnected = true;
           setIsConnected(true);
           setConnected(sessionId, true);
           setConnectionError(null);
         })
         .catch((e) => {
           const errStr = String(e);
+          const entry = terminalPool.get(sessionId);
+          if (entry) entry.hasConnected = false;
+          setIsConnected(false);
           setConnectionError(errStr);
           setError(sessionId, errStr);
           termRef.current?.write(`\r\n\x1b[31mFailed to connect: ${errStr}\x1b[0m\r\n`);
@@ -373,7 +378,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       termRef.current = entry.term;
       fitAddonRef.current = entry.fitAddon;
       lastSizeRef.current = entry.lastSize;
-      setIsConnected(true);
+      setIsConnected(entry.hasConnected);
       bindTerminalShortcuts(entry.term, entry.fitAddon, sessionId, showCopyToast);
 
       if (entry.element.parentElement !== containerRef.current) {
@@ -473,15 +478,15 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
       // Stream listeners
       const unlistenFns: Array<() => void> = [];
+
       listen<number[]>(`ssh-data-${sessionId}`, (event) => {
         const bytes = new Uint8Array(event.payload);
         term.write(bytes);
       }).then((unlisten) => unlistenFns.push(unlisten));
 
       listen<string>(`ssh-closed-${sessionId}`, () => {
-        setConnected(sessionId, false);
-        setIsConnected(false);
-        term.write("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n");
+        // When connection is closed (e.g. exit or Ctrl+D), immediately close the session/tab
+        closeSession(sessionId);
       }).then((unlisten) => unlistenFns.push(unlisten));
 
       listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
@@ -505,7 +510,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         term,
         fitAddon,
         element: domWrapper,
-        hasConnected: true,
+        hasConnected: false,
         unlistenFns,
         dataDisposable,
         lastSize: { cols: initialCols, rows: initialRows },

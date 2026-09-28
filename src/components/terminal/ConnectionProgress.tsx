@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import {
   Server,
   Plug,
+  ShieldCheck,
+  KeyRound,
   Terminal as TerminalIcon,
   AlertCircle,
   RotateCw,
@@ -9,6 +11,7 @@ import {
   Copy,
   Check,
   X,
+  Loader2,
 } from "lucide-react";
 import { Host } from "../../lib/api";
 import { useHostStore } from "../../stores/useHostStore";
@@ -77,25 +80,32 @@ export function ConnectionProgress({
   // Step 1: 15% (connecting)
   // Step 2: 45% (host key)
   // Step 3: 75% (authenticating)
-  // Step 4: 90% (opening pty/shell)
+  // Step 4: 92% (opening pty/shell)
   // Step 5: 100% (ready)
   const progressPercent = useMemo(() => {
     if (isFailed) return 50;
     switch (currentStep) {
       case 1:
-        return 20;
+        return 15;
       case 2:
-        return 50;
+        return 45;
       case 3:
         return 75;
       case 4:
-        return 90;
+        return 92;
       case 5:
         return 100;
       default:
         return 15;
     }
   }, [currentStep, isFailed]);
+
+  const stages = [
+    { step: 1, label: "Socket", icon: Plug },
+    { step: 2, label: "Host Key", icon: ShieldCheck },
+    { step: 3, label: "Auth", icon: KeyRound },
+    { step: 4, label: "Shell", icon: TerminalIcon },
+  ];
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0d1117] p-6 text-[var(--text-primary)] select-none">
@@ -139,8 +149,9 @@ export function ConnectionProgress({
 
           {/* Show Logs Toggle Button */}
           <button
+            type="button"
             onClick={() => setShowLogs((prev) => !prev)}
-            className="rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#30363d] shadow-sm"
+            className="rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#30363d] shadow-sm cursor-pointer"
           >
             {showLogs || isFailed ? "Hide logs" : "Show logs"}
           </button>
@@ -149,52 +160,79 @@ export function ConnectionProgress({
         {/* Process Tree: Horizontal Connecting Line & Stage Nodes (Termius-style) */}
         <div className="relative py-2">
           {/* Background Track */}
-          <div className="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-[#21262d]" />
+          <div className="absolute left-4 right-4 top-5 h-[3px] rounded-full bg-[#21262d]" />
 
           {/* Active Progress Fill */}
           <div
-            className={`absolute left-6 top-1/2 -translate-y-1/2 h-[3px] rounded-full transition-all duration-500 ${
+            className={`absolute left-4 top-5 h-[3px] rounded-full transition-all duration-500 ${
               isFailed ? "bg-[var(--danger)]" : "bg-[#38bdf8]"
             }`}
-            style={{ width: `calc(${progressPercent}% - 24px)` }}
+            style={{ width: `calc(${progressPercent}% - 20px)` }}
           />
 
           {/* Stage Nodes */}
           <div className="relative flex items-center justify-between">
-            {/* Start Node: Plug / Socket */}
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-all duration-300 ${
-                isFailed && currentStep === 1
-                  ? "bg-[var(--danger)] ring-4 ring-[var(--danger)]/25"
-                  : "bg-[#38bdf8] ring-4 ring-[#38bdf8]/20"
-              }`}
-            >
-              <Plug size={15} />
-            </div>
+            {stages.map((st) => {
+              const Icon = st.icon;
+              const isCompleted = currentStep > st.step || currentStep >= 5;
+              const isActive = currentStep === st.step && !isFailed;
+              const isCurrentFailed = isFailed && (currentStep === st.step || (currentStep < st.step && st.step === 1));
 
-            {/* End Node: Terminal Shell */}
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-all duration-300 ${
-                isFailed
-                  ? "bg-[var(--danger)] ring-4 ring-[var(--danger)]/25"
-                  : currentStep >= 5
-                  ? "bg-[#38bdf8] ring-4 ring-[#38bdf8]/20"
-                  : "bg-[#21262d] text-[var(--text-muted)] border border-[#30363d]"
-              }`}
-            >
-              {isFailed ? (
-                <AlertCircle size={15} />
-              ) : (
-                <TerminalIcon size={15} />
-              )}
-            </div>
+              return (
+                <div key={st.step} className="flex flex-col items-center">
+                  <div
+                    className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-all duration-300 shadow-md ${
+                      isCurrentFailed
+                        ? "bg-[var(--danger)] text-white ring-4 ring-[var(--danger)]/25"
+                        : isCompleted
+                        ? "bg-[var(--primary)] text-black ring-4 ring-[var(--primary)]/20"
+                        : isActive
+                        ? "bg-[#38bdf8] text-white ring-4 ring-[#38bdf8]/30 shadow-[#38bdf8]/30"
+                        : "bg-[#161b22] text-[var(--text-muted)] border border-[#30363d]"
+                    }`}
+                  >
+                    {isCurrentFailed ? (
+                      <AlertCircle size={16} />
+                    ) : isCompleted ? (
+                      <Check size={16} className="stroke-[2.5]" />
+                    ) : isActive ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin text-white" />
+                        <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#38bdf8] opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#38bdf8]" />
+                        </span>
+                      </>
+                    ) : (
+                      <Icon size={15} />
+                    )}
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono mt-1.5 transition-colors ${
+                      isActive
+                        ? "text-[#38bdf8] font-semibold"
+                        : isCompleted
+                        ? "text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {st.label}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Current status line */}
-        <div className="text-center">
+        {/* Current status line with animated indicator */}
+        <div className="flex items-center justify-center gap-2.5 min-h-[32px] px-3.5 py-1.5 rounded-xl bg-[#161b22]/70 border border-[#30363d]/60 text-center">
+          {!isFailed ? (
+            <Loader2 size={13} className="animate-spin text-[#38bdf8] shrink-0" />
+          ) : (
+            <AlertCircle size={13} className="text-[var(--danger)] shrink-0" />
+          )}
           <p
-            className={`text-xs font-medium transition-colors ${
+            className={`text-xs font-mono truncate transition-colors ${
               isFailed ? "text-[var(--danger)] font-semibold" : "text-[var(--text-secondary)]"
             }`}
           >

@@ -19,24 +19,30 @@ import {
   Cpu,
   Layers,
   Cloud,
+  ExternalLink,
+  ArrowUpCircle,
 } from "lucide-react";
 import { BackupRestoreSection } from "../vault/BackupRestoreSection";
 import { SyncSection } from "../sync/SyncSection";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
+import { useUpdateStore } from "../../stores/useUpdateStore";
 import {
   useSettingsStore,
   AutoLockPolicy,
   AUTO_LOCK_LABELS,
 } from "../../stores/useSettingsStore";
 import { api } from "../../lib/api";
+import { openExternalUrl } from "../../lib/openUrl";
+import kofiIcon from "../../assets/kofi.png";
 
 type SettingsTab = "security" | "sync" | "known_hosts" | "backup" | "about";
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("security");
   const { knownHosts } = useKnownHostsStore();
+  const { hasUpdate } = useUpdateStore();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const tabs: {
@@ -44,6 +50,7 @@ export function SettingsView() {
     label: string;
     icon: typeof Lock;
     badge?: number;
+    badgeDot?: boolean;
   }[] = [
     { id: "security", label: "Security & Vault", icon: Lock },
     { id: "sync", label: "Self-Hosted Sync", icon: Cloud },
@@ -54,7 +61,7 @@ export function SettingsView() {
       badge: knownHosts.length || undefined,
     },
     { id: "backup", label: "Backup & Restore", icon: Archive },
-    { id: "about", label: "About & Architecture", icon: Info },
+    { id: "about", label: "About & Architecture", icon: Info, badgeDot: hasUpdate },
   ];
 
   return (
@@ -78,7 +85,7 @@ export function SettingsView() {
               aria-label="Settings sections"
               className="inline-flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] shrink-0"
             >
-              {tabs.map(({ id, label, icon: Icon, badge }) => {
+              {tabs.map(({ id, label, icon: Icon, badge, badgeDot }) => {
                 const active = activeTab === id;
                 return (
                   <button
@@ -115,6 +122,9 @@ export function SettingsView() {
                       >
                         {badge}
                       </span>
+                    )}
+                    {badgeDot && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
                     )}
                   </button>
                 );
@@ -476,6 +486,9 @@ function KnownHostsTab() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function AboutTab() {
+  const { currentVersion, latestVersion, hasUpdate, releaseUrl, isChecking, checkForUpdates } =
+    useUpdateStore();
+
   return (
     <div className="space-y-5">
       {/* App banner */}
@@ -488,8 +501,13 @@ function AboutTab() {
             <div className="flex items-center gap-2.5">
               <h3 className="text-base font-semibold text-[var(--text-primary)]">Termimus</h3>
               <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30">
-                v0.4.2
+                v{currentVersion}
               </span>
+              {hasUpdate && (
+                <span className="rounded bg-[var(--warning)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--warning)] border border-[var(--warning)]/30 animate-pulse">
+                  Update v{latestVersion} available
+                </span>
+              )}
             </div>
             <p className="text-xs text-[var(--text-secondary)]">
               Self-hosted, Local-First SSH &amp; Server Manager desktop client.
@@ -527,6 +545,100 @@ function AboutTab() {
               Designed for future peer sync via self-hosted Docker relay without third-party cloud lock-in.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Software Updates Card */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div
+              className={`flex h-11 w-11 items-center justify-center rounded-xl shrink-0 ${
+                hasUpdate
+                  ? "bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30"
+                  : "bg-[var(--surface-container)] text-[var(--text-muted)]"
+              }`}
+            >
+              {hasUpdate ? (
+                <ArrowUpCircle size={22} className="animate-bounce" />
+              ) : (
+                <CheckCircle2 size={22} className="text-[var(--success)]" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-[var(--text-primary)]">
+                  {hasUpdate ? `Update Available: v${latestVersion}` : "Termimus is up to date"}
+                </h4>
+                {hasUpdate && (
+                  <span className="rounded bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30 animate-pulse">
+                    NEW
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                {hasUpdate
+                  ? `Version v${latestVersion} is available. You are currently on v${currentVersion}.`
+                  : `You are currently running the latest release (v${currentVersion}).`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {hasUpdate ? (
+              <button
+                type="button"
+                onClick={() => openExternalUrl(releaseUrl)}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-[var(--primary)] hover:bg-[var(--primary-hover,var(--primary))] text-[var(--canvas)] transition-all shadow-sm cursor-pointer hover:shadow-md active:scale-95"
+              >
+                <ArrowUpCircle size={14} />
+                <span>Download v{latestVersion}</span>
+                <ExternalLink size={12} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => checkForUpdates(true)}
+                disabled={isChecking}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium border border-[var(--border)] bg-[var(--surface-container)]/70 hover:bg-[var(--surface-container)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RotateCw size={13} className={isChecking ? "animate-spin text-[var(--primary)]" : ""} />
+                <span>{isChecking ? "Checking..." : "Check for Updates"}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Support & Donation Card */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 shadow-sm space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#FF5E5B]/15 shrink-0 border border-[#FF5E5B]/20">
+              <img src={kofiIcon} alt="Ko-fi" className="w-6 h-auto object-contain drop-shadow-xs" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-[var(--text-primary)]">Support Termimus</h4>
+                <span className="rounded bg-[#FF5E5B]/15 px-2 py-0.5 text-[10px] font-semibold text-[#FF5E5B] border border-[#FF5E5B]/30">
+                  Ko-fi
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5 max-w-xl">
+                Termimus is completely free and open-source. Donations directly support ongoing development, domain/hosting costs, and maintenance.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => openExternalUrl("https://ko-fi.com/termimus")}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-[#FF5E5B] hover:bg-[#ff4743] text-white transition-all shadow-sm shrink-0 cursor-pointer hover:shadow-md active:scale-95"
+          >
+            <img src={kofiIcon} alt="" className="w-4 h-auto brightness-0 invert" />
+            <span>Donate on Ko-fi</span>
+            <ExternalLink size={13} />
+          </button>
         </div>
       </div>
 

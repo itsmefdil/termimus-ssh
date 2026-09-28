@@ -6,11 +6,12 @@
 
 <p align="center">
   <strong>The Local-First, Zero-Knowledge SSH Client & Server Management Suite</strong><br>
-  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.4.1</strong>
+  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.4.3</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/termimus/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.4.1-00d2b4.svg?style=flat&label=version" alt="Version v0.4.1" /></a>
+  <a href="https://github.com/termimus/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.4.3-00d2b4.svg?style=flat&label=version" alt="Version v0.4.3" /></a>
+  <a href="https://ko-fi.com/termimus"><img src="https://img.shields.io/badge/Ko--fi-Support%20Project-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi" /></a>
   <a href="https://github.com/termimus/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/termimus/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen" alt="Platforms" />
@@ -261,6 +262,18 @@ termimus/
 │
 └── .github/workflows/            # GitHub Actions CI/CD (Multi-arch GHCR build)
 ```
+
+---
+
+## 💖 Support the Project
+
+If you find Termimus useful and want to support its ongoing development (server infrastructure, domain, and new features), consider buying a coffee! Every contribution helps keep the project independent, local-first, and completely free.
+
+<p align="center">
+  <a href="https://ko-fi.com/termimus" target="_blank">
+    <img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="40" alt="Buy Me a Coffee at ko-fi.com" />
+  </a>
+</p>
 
 ---
 

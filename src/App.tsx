@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { useVaultStore } from "./stores/useVaultStore";
@@ -22,6 +22,7 @@ import { ConfirmModal } from "./components/layout/ConfirmModal";
 import { SnippetModal } from "./components/snippets/SnippetModal";
 import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
+import { useUpdateStore } from "./stores/useUpdateStore";
 import { useAutoLock } from "./hooks/useAutoLock";
 import { useLiveSync } from "./hooks/useLiveSync";
 
@@ -64,7 +65,8 @@ function App() {
   const { isUnlocked, refresh: refreshVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
   const { refresh: refreshKeychain } = useKeychainStore();
-  const { activeTabId, activeGroupId } = useSessionStore();
+  const { activeTabId, activeGroupId, tabs } = useSessionStore();
+  const prevTabsCountRef = useRef(tabs.length);
 
   const handleNavChange = useCallback((tab: ActiveTab) => {
     setActiveNav(tab);
@@ -92,6 +94,7 @@ function App() {
 
   useEffect(() => {
     refreshVault();
+    useUpdateStore.getState().init();
   }, [refreshVault]);
 
   useEffect(() => {
@@ -129,6 +132,14 @@ function App() {
       handleNavChange("terminal");
     }
   }, [activeGroupId, activeTabId, handleNavChange]);
+
+  // When all terminal tabs have been closed (e.g. via Ctrl+D or exit), return to hosts view
+  useEffect(() => {
+    if (prevTabsCountRef.current > 0 && tabs.length === 0 && activeNav === "terminal") {
+      handleNavChange("hosts");
+    }
+    prevTabsCountRef.current = tabs.length;
+  }, [tabs.length, activeNav, handleNavChange]);
 
   // Disable default browser context menu across the app (sidebar, empty areas, cards).
   // Dedicated custom context menus (Terminal in XtermView, Tabs in Header) handle their own events.
@@ -192,6 +203,7 @@ function App() {
           {visitedTabs.has("hosts") && (
             <PageView active={activeNav === "hosts"}>
               <HostList
+                onOpenTerminal={() => handleNavChange("terminal")}
                 onOpenSftp={() => handleNavChange("sftp")}
                 onOpenTunnels={() => handleNavChange("tunnels")}
               />
