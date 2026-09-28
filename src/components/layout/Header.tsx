@@ -13,12 +13,18 @@ import {
   Copy,
   Radio,
   Cloud,
+  Columns2,
+  Rows2,
+  ArrowRightToLine,
+  XCircle,
+  CopyPlus,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
-import { getAllSessionIdsInTree } from "../../lib/layoutTree";
+import { useHostStore } from "../../stores/useHostStore";
+import { getAllSessionIdsInTree, getAllLeafPanes } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 
 const appWindow = getCurrentWindow();
@@ -69,7 +75,117 @@ export function Header({
 
   const [isMaximized, setIsMaximized] = useState(false);
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState<{
+    x: number;
+    y: number;
+    groupId?: string;
+  } | null>(null);
   const isMac = checkIsMac();
+
+  const handleTabContextMenu = (e: React.MouseEvent, groupId?: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 300);
+    setTabContextMenu({ x, y, groupId });
+  };
+
+  useEffect(() => {
+    if (!tabContextMenu) return;
+    const handleClose = () => setTabContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTabContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [tabContextMenu]);
+
+  const targetGroup = tabContextMenu?.groupId
+    ? groups.find((g) => g.id === tabContextMenu.groupId)
+    : null;
+
+  const targetPrimaryTab = targetGroup
+    ? getAllSessionIdsInTree(targetGroup.rootPane)
+        .map((id) => tabs.find((t) => t.id === id))
+        .find(Boolean)
+    : null;
+
+  const targetHost = targetPrimaryTab
+    ? useHostStore.getState().hosts.find((h) => h.id === targetPrimaryTab.hostId)
+    : null;
+
+  const isTargetBroadcast = targetGroup
+    ? broadcastGroupIds.includes(targetGroup.id)
+    : false;
+
+  const handleDuplicateTab = async () => {
+    if (!targetHost) return;
+    await useSessionStore.getState().openSession(targetHost, true);
+    onSelectTab?.();
+    setTabContextMenu(null);
+  };
+
+  const handleSplitRightTab = async () => {
+    if (!targetHost || !targetGroup) return;
+    setActiveGroup(targetGroup.id);
+    onSelectTab?.();
+    const leaves = getAllLeafPanes(targetGroup.rootPane);
+    if (leaves[0]) {
+      const newSid = await useSessionStore.getState().openSession(targetHost, false);
+      useSessionStore.getState().splitPane(leaves[0].id, newSid, "row", "second");
+    }
+    setTabContextMenu(null);
+  };
+
+  const handleSplitDownTab = async () => {
+    if (!targetHost || !targetGroup) return;
+    setActiveGroup(targetGroup.id);
+    onSelectTab?.();
+    const leaves = getAllLeafPanes(targetGroup.rootPane);
+    if (leaves[0]) {
+      const newSid = await useSessionStore.getState().openSession(targetHost, false);
+      useSessionStore.getState().splitPane(leaves[0].id, newSid, "column", "second");
+    }
+    setTabContextMenu(null);
+  };
+
+  const handleToggleBroadcast = () => {
+    if (!targetGroup) return;
+    useSessionStore.getState().toggleGroupBroadcast(targetGroup.id);
+    setTabContextMenu(null);
+  };
+
+  const handleCloseTab = () => {
+    if (!targetGroup) return;
+    closeGroup(targetGroup.id);
+    setTabContextMenu(null);
+  };
+
+  const handleCloseOtherTabs = () => {
+    if (!targetGroup) return;
+    groups.forEach((g) => {
+      if (g.id !== targetGroup.id) closeGroup(g.id);
+    });
+    setTabContextMenu(null);
+  };
+
+  const handleCloseTabsToRight = () => {
+    if (!targetGroup) return;
+    const idx = groups.findIndex((g) => g.id === targetGroup.id);
+    if (idx !== -1) {
+      groups.slice(idx + 1).forEach((g) => closeGroup(g.id));
+    }
+    setTabContextMenu(null);
+  };
+
+  const handleCloseAllTabs = () => {
+    groups.forEach((g) => closeGroup(g.id));
+    setTabContextMenu(null);
+  };
 
   useEffect(() => {
     const updateWindowState = async () => {
@@ -360,6 +476,7 @@ export function Header({
         {/* Tabs Row (Each tab represents a Workspace / Split Screen Group) */}
         <div
           data-tauri-drag-region
+          onContextMenu={(e) => handleTabContextMenu(e)}
           className={`flex h-full ${
             isMac ? "max-w-[calc(100%-120px)]" : "max-w-[calc(100%-180px)]"
           } shrink-0 items-center gap-1 overflow-x-auto px-1`}
@@ -387,6 +504,7 @@ export function Header({
               <div
                 key={group.id}
                 data-tauri-drag-region="false"
+                onContextMenu={(e) => handleTabContextMenu(e, group.id)}
                 onClick={() => {
                   setActiveGroup(group.id);
                   onSelectTab?.();
@@ -515,6 +633,137 @@ export function Header({
           </div>
         )}
       </header>
+
+      {/* Top Bar Tabs Right-Click Context Menu */}
+      {tabContextMenu && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {targetGroup ? (
+            <>
+              {/* Duplicate Tab */}
+              <button
+                onClick={handleDuplicateTab}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <CopyPlus size={13} />
+                  <span>Duplicate Tab</span>
+                </div>
+              </button>
+
+              {/* Split Screen Right */}
+              <button
+                onClick={handleSplitRightTab}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <Columns2 size={13} />
+                  <span>Split Screen (Right)</span>
+                </div>
+              </button>
+
+              {/* Split Screen Down */}
+              <button
+                onClick={handleSplitDownTab}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <Rows2 size={13} />
+                  <span>Split Screen (Down)</span>
+                </div>
+              </button>
+
+              {/* Toggle Input Broadcast Sync */}
+              <button
+                onClick={handleToggleBroadcast}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <Radio size={13} className={isTargetBroadcast ? "animate-pulse" : ""} />
+                  <span>{isTargetBroadcast ? "Disconnect Input Sync" : "Sync All Panes"}</span>
+                </div>
+                <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
+                  Alt+B
+                </span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Close Tab */}
+              <button
+                onClick={handleCloseTab}
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <X size={13} />
+                  <span>Close Tab</span>
+                </div>
+              </button>
+
+              {/* Close Other Tabs */}
+              {groups.length > 1 && (
+                <button
+                  onClick={handleCloseOtherTabs}
+                  className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <XCircle size={13} />
+                    <span>Close Other Tabs</span>
+                  </div>
+                </button>
+              )}
+
+              {/* Close Tabs to the Right */}
+              {groups.findIndex((g) => g.id === targetGroup.id) < groups.length - 1 && (
+                <button
+                  onClick={handleCloseTabsToRight}
+                  className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <ArrowRightToLine size={13} />
+                    <span>Close Tabs to the Right</span>
+                  </div>
+                </button>
+              )}
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+            </>
+          ) : null}
+
+          {/* New Connection / Quick Connect */}
+          <button
+            onClick={() => {
+              setIsQuickConnectOpen(true);
+              setTabContextMenu(null);
+            }}
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+          >
+            <div className="flex items-center gap-2">
+              <Plus size={13} />
+              <span>New Connection</span>
+            </div>
+            <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
+              {isMac ? "⌘K" : "Ctrl+K"}
+            </span>
+          </button>
+
+          {/* Close All Tabs (when clicking empty space and tabs exist) */}
+          {!targetGroup && groups.length > 0 && (
+            <button
+              onClick={handleCloseAllTabs}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+            >
+              <div className="flex items-center gap-2">
+                <XCircle size={13} />
+                <span>Close All Tabs</span>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
     </>
   );
 }

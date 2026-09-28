@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Layers,
   Plus,
@@ -6,13 +6,14 @@ import {
   BookmarkPlus,
   Server,
   Zap,
+  Copy,
+  Pencil,
+  Trash2,
 } from "lucide-react";
-import {
-  useWorkspaceStore,
-  WorkspacePreset,
-} from "../../stores/useWorkspaceStore";
+import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 import { getAllLeafPanes } from "../../lib/layoutTree";
 import { launchWorkspacePreset } from "../../lib/workspaceLauncher";
 import { WorkspaceCard } from "./WorkspaceCard";
@@ -35,6 +36,42 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
   const { hosts } = useHostStore();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "preset" | "background";
+    preset?: WorkspacePreset;
+  } | null>(null);
+
+  const handlePresetContextMenu = useCallback((e: React.MouseEvent, preset: WorkspacePreset) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 250);
+    setContextMenu({ x, y, type: "preset", preset });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   // Check if current active group in terminal has multiple panes
   const activeGroup = groups.find((g) => g.id === activeGroupId);
@@ -127,7 +164,10 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
   };
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] text-[var(--text-primary)]">
+    <div
+      onContextMenu={handleBackgroundContextMenu}
+      className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] text-[var(--text-primary)]"
+    >
       {/* Top Header */}
       <div className="border-b border-[var(--border)] bg-[var(--surface-container)]/40 px-6 py-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -270,6 +310,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
                 onEdit={openEditModal}
                 onDuplicate={duplicatePreset}
                 onDelete={deletePreset}
+                onContextMenu={handlePresetContextMenu}
               />
             ))}
           </div>
@@ -278,6 +319,104 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
 
       {/* Preset Create / Edit Modal */}
       <WorkspaceModal />
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[200px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "preset" && contextMenu.preset ? (
+            <>
+              {/* Launch */}
+              <button
+                onClick={() => {
+                  handleLaunchPreset(contextMenu.preset!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Zap size={13} />
+                <span>Launch Workspace</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Duplicate */}
+              <button
+                onClick={() => {
+                  duplicatePreset(contextMenu.preset!.id);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Duplicate Preset</span>
+              </button>
+
+              {/* Edit */}
+              <button
+                onClick={() => {
+                  openEditModal(contextMenu.preset!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Edit Preset</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete */}
+              <button
+                onClick={() => {
+                  useConfirmStore.getState().confirm({
+                    title: "Delete Workspace Preset",
+                    message: `Are you sure you want to delete "${contextMenu.preset!.name}"? This action cannot be undone.`,
+                    confirmLabel: "Delete",
+                    isDanger: true,
+                    onConfirm: () => deletePreset(contextMenu.preset!.id),
+                  });
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Preset</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New Preset */}
+              <button
+                onClick={() => {
+                  openCreateModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Plus size={13} />
+                <span>New Preset</span>
+              </button>
+
+              {canSaveActiveSplit && (
+                <button
+                  onClick={() => {
+                    handleSaveActiveSplit();
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                >
+                  <BookmarkPlus size={13} />
+                  <span>Save Active Split ({activeLeafPanes.length})</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

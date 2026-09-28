@@ -24,6 +24,7 @@ interface WorkspaceCardProps {
   onEdit: (preset: WorkspacePreset) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  onContextMenu?: (e: React.MouseEvent, preset: WorkspacePreset) => void;
 }
 
 /**
@@ -139,6 +140,7 @@ export function WorkspaceCard({
   onEdit,
   onDuplicate,
   onDelete,
+  onContextMenu,
 }: WorkspaceCardProps) {
   const { hosts } = useHostStore();
   const { statusByHostId } = usePingStore();
@@ -180,7 +182,10 @@ export function WorkspaceCard({
   };
 
   return (
-    <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-4 shadow-sm transition-all hover:border-[var(--primary)]/50 hover:bg-[var(--surface-high)] hover:shadow-md">
+    <div
+      onContextMenu={(e) => onContextMenu?.(e, preset)}
+      className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-4 shadow-sm transition-all hover:border-[var(--primary)]/50 hover:bg-[var(--surface-high)] hover:shadow-md"
+    >
       <div>
         {/* Top Header: Title, Layout Badge, Actions */}
         <div className="flex items-start justify-between gap-3">

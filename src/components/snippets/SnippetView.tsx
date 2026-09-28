@@ -34,6 +34,51 @@ export function SnippetView() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [runFeedback, setRunFeedback] = useState<{ id: string; ok: boolean } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "snippet" | "background";
+    snippet?: Snippet;
+  } | null>(null);
+
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const showCopyToast = useCallback((msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => {
+      setCopyToast((prev) => (prev === msg ? null : prev));
+    }, 1800);
+  }, []);
+
+  const handleSnippetContextMenu = useCallback((e: React.MouseEvent, snippet: Snippet) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 250);
+    setContextMenu({ x, y, type: "snippet", snippet });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     // Only refresh if snippets empty; otherwise preloaded on unlock
@@ -81,7 +126,10 @@ export function SnippetView() {
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none">
+    <div
+      onContextMenu={handleBackgroundContextMenu}
+      className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none"
+    >
       {/* Header */}
       <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
         <div>
@@ -167,11 +215,101 @@ export function SnippetView() {
                 onRun={handleRun}
                 onEdit={openEditModal}
                 onDelete={handleDelete}
+                onContextMenu={handleSnippetContextMenu}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "snippet" && contextMenu.snippet ? (
+            <>
+              {/* Run in Terminal */}
+              <button
+                onClick={() => {
+                  handleRun(contextMenu.snippet!.id, contextMenu.snippet!.command);
+                  setContextMenu(null);
+                }}
+                disabled={!hasActiveTerminal}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Play size={13} />
+                <span>Run in Active Terminal</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Copy Command */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(contextMenu.snippet!.command);
+                  showCopyToast("Copied command");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Command</span>
+              </button>
+
+              {/* Edit Snippet */}
+              <button
+                onClick={() => {
+                  openEditModal(contextMenu.snippet!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Edit Snippet</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete Snippet */}
+              <button
+                onClick={() => {
+                  handleDelete(contextMenu.snippet!.id, contextMenu.snippet!.title);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Snippet</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New Snippet */}
+              <button
+                onClick={() => {
+                  openCreateModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Plus size={13} />
+                <span>New Snippet</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Copy Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+          <Check size={13} className="text-[var(--primary)] shrink-0" />
+          <span>{copyToast}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -187,6 +325,7 @@ interface SnippetCardProps {
   onRun: (id: string, command: string) => void;
   onEdit: (snippet: Snippet) => void;
   onDelete: (id: string, title?: string) => void;
+  onContextMenu?: (e: React.MouseEvent, snippet: Snippet) => void;
 }
 
 const SnippetCard = memo(function SnippetCard({
@@ -196,6 +335,7 @@ const SnippetCard = memo(function SnippetCard({
   onRun,
   onEdit,
   onDelete,
+  onContextMenu,
 }: SnippetCardProps) {
   const isSecret = snippet.tags.some((t) => t.toLowerCase() === "secret");
   const [isRevealed, setIsRevealed] = useState(false);
@@ -213,7 +353,10 @@ const SnippetCard = memo(function SnippetCard({
   };
 
   return (
-    <div className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors shadow-xs">
+    <div
+      onContextMenu={(e) => onContextMenu?.(e, snippet)}
+      className="flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 hover:border-[var(--border)]/80 transition-colors shadow-xs"
+    >
       <div className="flex min-w-0 items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0 pr-2">
           <h3 className="min-w-0 truncate text-sm font-semibold text-[var(--text-primary)]">

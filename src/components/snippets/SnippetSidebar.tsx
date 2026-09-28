@@ -55,6 +55,42 @@ export function SnippetSidebar() {
     ok: boolean;
   } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "snippet" | "background";
+    snippet?: Snippet;
+  } | null>(null);
+
+  const handleSnippetContextMenu = useCallback((e: React.MouseEvent, snippet: Snippet) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 250);
+    setContextMenu({ x, y, type: "snippet", snippet });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   useEffect(() => {
     if (snippets.length === 0) {
@@ -148,6 +184,7 @@ export function SnippetSidebar() {
 
   return (
     <aside
+      onContextMenu={handleBackgroundContextMenu}
       className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--canvas)] select-none z-20 transition-all duration-200"
       aria-label="Snippets Sidebar"
     >
@@ -384,10 +421,95 @@ export function SnippetSidebar() {
               onCopy={handleCopy}
               onEdit={openEditModal}
               onDelete={handleDelete}
+              onContextMenu={handleSnippetContextMenu}
             />
           ))
         )}
       </div>
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[200px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "snippet" && contextMenu.snippet ? (
+            <>
+              {/* Run */}
+              <button
+                onClick={() => {
+                  handleExecute(contextMenu.snippet!, "auto");
+                  setContextMenu(null);
+                }}
+                disabled={!hasConnectedTerminal}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Play size={13} />
+                <span>
+                  {isMultiTerminal && isBroadcast
+                    ? `Run on All (${connectedLeafTabs.length})`
+                    : "Run in Terminal"}
+                </span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Copy Command */}
+              <button
+                onClick={() => {
+                  handleCopy(contextMenu.snippet!.id, contextMenu.snippet!.command);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Command</span>
+              </button>
+
+              {/* Edit */}
+              <button
+                onClick={() => {
+                  openEditModal(contextMenu.snippet!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Edit Snippet</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete */}
+              <button
+                onClick={() => {
+                  handleDelete(contextMenu.snippet!.id, contextMenu.snippet!.title);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Snippet</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New Snippet */}
+              <button
+                onClick={() => {
+                  openCreateModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Plus size={13} />
+                <span>New Snippet</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
@@ -409,6 +531,7 @@ interface SidebarSnippetCardProps {
   onCopy: (id: string, text: string) => void;
   onEdit: (snippet: Snippet) => void;
   onDelete: (id: string, title?: string) => void;
+  onContextMenu?: (e: React.MouseEvent, snippet: Snippet) => void;
 }
 
 const SidebarSnippetCard = memo(function SidebarSnippetCard({
@@ -424,13 +547,17 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
   onCopy,
   onEdit,
   onDelete,
+  onContextMenu,
 }: SidebarSnippetCardProps) {
   const isSecret = snippet.tags.some((t) => t.toLowerCase() === "secret");
   const [isRevealed, setIsRevealed] = useState(false);
   const displayTags = snippet.tags.filter((t) => t.toLowerCase() !== "secret");
 
   return (
-    <div className="group/item flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface-container)] p-2.5 hover:border-[var(--border-subtle)] transition-all shadow-xs">
+    <div
+      onContextMenu={(e) => onContextMenu?.(e, snippet)}
+      className="group/item flex flex-col rounded-lg border border-[var(--border)] bg-[var(--surface-container)] p-2.5 hover:border-[var(--border-subtle)] transition-all shadow-xs"
+    >
       {/* Card Header */}
       <div className="flex items-center justify-between mb-1.5 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0 pr-1">

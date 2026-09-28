@@ -123,6 +123,10 @@ export function SftpView() {
           onDeleteItem={deleteLocalItem}
           onRefresh={() => navigateLocal(localPath)}
           onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: false })}
+          onTransfer={(entry) => {
+            selectLocalFile(entry);
+            setTimeout(() => uploadSelected(), 0);
+          }}
         />
 
         {/* Center Transfer Buttons */}
@@ -183,6 +187,10 @@ export function SftpView() {
           onRefresh={() => navigateRemote(remotePath)}
           onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: true })}
           disabled={!remoteSessionId}
+          onTransfer={(entry) => {
+            selectRemoteFile(entry);
+            setTimeout(() => downloadSelected(), 0);
+          }}
         />
       </div>
 

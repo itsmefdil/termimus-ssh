@@ -12,6 +12,9 @@ import {
   ArrowLeft,
   Search,
   MoreVertical,
+  Copy,
+  RefreshCw,
+  Check,
 } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -50,6 +53,60 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
   const [selectedTag, setSelectedTag] = useState<string>("All");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [activeMenuHostId, setActiveMenuHostId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "host" | "folder" | "background";
+    host?: Host;
+    folder?: Folder;
+  } | null>(null);
+
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const showCopyToast = useCallback((msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => {
+      setCopyToast((prev) => (prev === msg ? null : prev));
+    }, 1800);
+  }, []);
+
+  const handleHostContextMenu = useCallback((e: React.MouseEvent, host: Host) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 340);
+    setContextMenu({ x, y, type: "host", host });
+  }, []);
+
+  const handleFolderContextMenu = useCallback((e: React.MouseEvent, folder: Folder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 200);
+    setContextMenu({ x, y, type: "folder", folder });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 200);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   // Background ping check
   useEffect(() => {
@@ -174,6 +231,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
   return (
     <div
       onClick={() => setActiveMenuHostId(null)}
+      onContextMenu={handleBackgroundContextMenu}
       className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5 select-none"
     >
       {/* Folder create/rename modal */}
@@ -327,6 +385,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                   onTunnels={onOpenTunnels}
                   onEdit={openEditModal}
                   onDelete={handleDelete}
+                  onContextMenu={handleHostContextMenu}
                 />
               ))}
             </div>
@@ -356,6 +415,7 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                     onSelect={setSelectedFolderId}
                     onEdit={openEditFolderModal}
                     onDelete={handleDeleteFolder}
+                    onContextMenu={handleFolderContextMenu}
                   />
                 ))}
               </div>
@@ -405,11 +465,203 @@ export function HostList({ onOpenSftp, onOpenTunnels }: HostListProps) {
                     onTunnels={onOpenTunnels}
                     onEdit={openEditModal}
                     onDelete={handleDelete}
+                    onContextMenu={handleHostContextMenu}
                   />
                 ))}
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "host" && contextMenu.host ? (
+            <>
+              {/* Connect SSH */}
+              <button
+                onClick={() => {
+                  handleConnect(contextMenu.host!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Terminal size={13} />
+                <span>Connect SSH</span>
+              </button>
+
+              {/* SFTP Browser */}
+              <button
+                onClick={(e) => {
+                  handleSftpClick(e, contextMenu.host!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <FolderOpen size={13} />
+                <span>SFTP Files</span>
+              </button>
+
+              {/* Port Forwarding */}
+              <button
+                onClick={() => {
+                  onOpenTunnels();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Waypoints size={13} />
+                <span>Port Forwarding</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Copy SSH Command */}
+              <button
+                onClick={async () => {
+                  const port = contextMenu.host!.port || 22;
+                  const cmd = `ssh -p ${port} ${contextMenu.host!.username}@${contextMenu.host!.address}`;
+                  await navigator.clipboard.writeText(cmd);
+                  showCopyToast("Copied SSH command");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy SSH Command</span>
+              </button>
+
+              {/* Copy Address */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(contextMenu.host!.address);
+                  showCopyToast("Copied host address");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Address</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Edit Host */}
+              <button
+                onClick={() => {
+                  openEditModal(contextMenu.host!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Edit Host</span>
+              </button>
+
+              {/* Delete Host */}
+              <button
+                onClick={(e) => {
+                  handleDelete(e, contextMenu.host!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Host</span>
+              </button>
+            </>
+          ) : contextMenu.type === "folder" && contextMenu.folder ? (
+            <>
+              {/* Open Group */}
+              <button
+                onClick={() => {
+                  setSelectedFolderId(contextMenu.folder!.id);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <FolderOpen size={13} />
+                <span>Open Group</span>
+              </button>
+
+              {/* Rename Group */}
+              <button
+                onClick={() => {
+                  openEditFolderModal(contextMenu.folder!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Rename Group</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete Group */}
+              <button
+                onClick={(e) => {
+                  handleDeleteFolder(e, contextMenu.folder!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Group</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Background Empty Area Menu */}
+              <button
+                onClick={() => {
+                  openCreateModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Plus size={13} />
+                <span>New Host</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  openCreateFolderModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <FolderPlus size={13} />
+                <span>New Group</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              <button
+                onClick={() => {
+                  pingAll();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <RefreshCw size={13} />
+                <span>Ping All Hosts</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Copy Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+          <Check size={13} className="text-[var(--primary)] shrink-0" />
+          <span>{copyToast}</span>
         </div>
       )}
     </div>
@@ -426,6 +678,7 @@ interface FolderCardProps {
   onSelect: (folderId: string) => void;
   onEdit: (folder: Folder) => void;
   onDelete: (e: React.MouseEvent, folder: Folder) => void;
+  onContextMenu?: (e: React.MouseEvent, folder: Folder) => void;
 }
 
 const FolderCard = memo(function FolderCard({
@@ -434,10 +687,12 @@ const FolderCard = memo(function FolderCard({
   onSelect,
   onEdit,
   onDelete,
+  onContextMenu,
 }: FolderCardProps) {
   return (
     <div
       onClick={() => onSelect(folder.id)}
+      onContextMenu={(e) => onContextMenu?.(e, folder)}
       className="group relative flex items-center gap-3.5 rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-colors cursor-pointer shadow-sm hover:shadow-md"
     >
       {/* Group Icon Badge */}
@@ -493,6 +748,7 @@ interface HostCardProps {
   onTunnels: () => void;
   onEdit: (host: Host) => void;
   onDelete: (e: React.MouseEvent, host: Host) => void;
+  onContextMenu?: (e: React.MouseEvent, host: Host) => void;
 }
 
 const HostCard = memo(function HostCard({
@@ -505,10 +761,12 @@ const HostCard = memo(function HostCard({
   onTunnels,
   onEdit,
   onDelete,
+  onContextMenu,
 }: HostCardProps) {
   return (
     <div
       onClick={() => onConnect(host)}
+      onContextMenu={(e) => onContextMenu?.(e, host)}
       className="group relative flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-colors cursor-pointer shadow-sm hover:shadow-md select-none"
     >
       <div className="flex items-center gap-3.5 min-w-0 flex-1">

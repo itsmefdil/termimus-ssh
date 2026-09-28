@@ -1,4 +1,4 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useCallback, memo, useEffect } from "react";
 import {
   Folder,
   File,
@@ -8,6 +8,9 @@ import {
   Trash2,
   Loader2,
   FileCode,
+  ArrowRight,
+  Copy,
+  Check,
 } from "lucide-react";
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
@@ -27,6 +30,7 @@ interface FilePaneProps {
   onRefresh: () => void;
   onOpenFile?: (entry: FileEntry) => void;
   disabled?: boolean;
+  onTransfer?: (entry: FileEntry) => void;
 }
 
 export function FilePane({
@@ -43,9 +47,57 @@ export function FilePane({
   onRefresh,
   onOpenFile,
   disabled = false,
+  onTransfer,
 }: FilePaneProps) {
   const [newFolderName, setNewFolderName] = useState("");
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "entry" | "background";
+    entry?: FileEntry;
+  } | null>(null);
+
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const showCopyToast = useCallback((msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => {
+      setCopyToast((prev) => (prev === msg ? null : prev));
+    }, 1800);
+  }, []);
+
+  const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 260);
+    setContextMenu({ x, y, type: "entry", entry });
+  }, []);
+
+  const handlePaneContextMenu = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Only trigger on pane background (not on file rows which have their own handler)
+    if (target.closest("tbody")) return;
+    e.preventDefault();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 200);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   async function handleCreateFolderSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,7 +137,10 @@ export function FilePane({
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]">
+    <div
+      onContextMenu={handlePaneContextMenu}
+      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]"
+    >
       {/* Pane Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
         <div className="min-w-0">
@@ -196,12 +251,140 @@ export function FilePane({
                   onDoubleClick={handleRowDoubleClick}
                   onOpenFile={onOpenFile}
                   onDelete={handleDeleteClick}
+                  onContextMenu={handleEntryContextMenu}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[200px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "entry" && contextMenu.entry ? (
+            <>
+              {/* Open / Navigate */}
+              <button
+                onClick={() => {
+                  const entry = contextMenu.entry!;
+                  if (entry.is_dir) onNavigate(entry.path);
+                  else onOpenFile?.(entry);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                {contextMenu.entry.is_dir ? (
+                  <>
+                    <Folder size={13} />
+                    <span>Open Folder</span>
+                  </>
+                ) : (
+                  <>
+                    <FileCode size={13} />
+                    <span>Edit File</span>
+                  </>
+                )}
+              </button>
+
+              {/* Transfer (Upload / Download) */}
+              {onTransfer && !contextMenu.entry.is_dir && (
+                <button
+                  onClick={() => {
+                    onTransfer(contextMenu.entry!);
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                >
+                  <ArrowRight size={13} />
+                  <span>{title === "Local Machine" ? "Upload to Remote" : "Download to Local"}</span>
+                </button>
+              )}
+
+              {/* Copy Path */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(contextMenu.entry!.path);
+                  showCopyToast("Copied file path");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Path</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete */}
+              <button
+                onClick={(e) => {
+                  handleDeleteClick(e, contextMenu.entry!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>{contextMenu.entry.is_dir ? "Delete Folder" : "Delete File"}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New Folder */}
+              <button
+                onClick={() => {
+                  setIsCreatingFolder(true);
+                  setContextMenu(null);
+                }}
+                disabled={disabled}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <FolderPlus size={13} />
+                <span>New Folder</span>
+              </button>
+
+              {/* Refresh */}
+              <button
+                onClick={() => {
+                  onRefresh();
+                  setContextMenu(null);
+                }}
+                disabled={disabled || loading}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <RotateCw size={13} />
+                <span>Refresh Directory</span>
+              </button>
+
+              {/* Copy Current Path */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(path || "/");
+                  showCopyToast("Copied directory path");
+                  setContextMenu(null);
+                }}
+                disabled={disabled || !path}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Copy size={13} />
+                <span>Copy Directory Path</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Copy Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+          <Check size={13} className="text-[var(--primary)] shrink-0" />
+          <span>{copyToast}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -217,6 +400,7 @@ interface FileRowProps {
   onDoubleClick: (entry: FileEntry) => void;
   onOpenFile?: (entry: FileEntry) => void;
   onDelete: (e: React.MouseEvent, entry: FileEntry) => void;
+  onContextMenu?: (e: React.MouseEvent, entry: FileEntry) => void;
 }
 
 const FileRow = memo(function FileRow({
@@ -226,11 +410,13 @@ const FileRow = memo(function FileRow({
   onDoubleClick,
   onOpenFile,
   onDelete,
+  onContextMenu,
 }: FileRowProps) {
   return (
     <tr
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onDoubleClick(entry)}
+      onContextMenu={(e) => onContextMenu?.(e, entry)}
       className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
         isSelected
           ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"

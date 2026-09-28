@@ -130,6 +130,20 @@ function App() {
     }
   }, [activeGroupId, activeTabId, handleNavChange]);
 
+  // Disable default browser context menu across the app (sidebar, empty areas, cards).
+  // Dedicated custom context menus (Terminal in XtermView, Tabs in Header) handle their own events.
+  useEffect(() => {
+    function handleGlobalContextMenu(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA");
+      if (!isInput) {
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("contextmenu", handleGlobalContextMenu);
+    return () => window.removeEventListener("contextmenu", handleGlobalContextMenu);
+  }, []);
+
   const showTerminal = activeNav === "terminal";
 
   return (

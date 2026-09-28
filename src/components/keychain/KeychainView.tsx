@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, useEffect, memo } from "react";
 import {
   KeyRound,
   Plus,
@@ -30,6 +30,51 @@ export function KeychainView() {
   } = useKeychainStore();
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "item" | "background";
+    item?: KeychainItem;
+  } | null>(null);
+
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const showCopyToast = useCallback((msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => {
+      setCopyToast((prev) => (prev === msg ? null : prev));
+    }, 1800);
+  }, []);
+
+  const handleItemContextMenu = useCallback((e: React.MouseEvent, item: KeychainItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 250);
+    setContextMenu({ x, y, type: "item", item });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
 
   const query = searchQuery.trim().toLowerCase();
 
@@ -76,7 +121,10 @@ export function KeychainView() {
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5 select-none">
+    <div
+      onContextMenu={handleBackgroundContextMenu}
+      className="flex h-full w-full flex-col overflow-y-auto bg-[var(--canvas)] p-5 select-none"
+    >
       {/* Header */}
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2.5">
@@ -168,6 +216,7 @@ export function KeychainView() {
                     onCopy={handleCopyPublicKey}
                     onEdit={openEditKeyModal}
                     onDelete={handleDelete}
+                    onContextMenu={handleItemContextMenu}
                   />
                 ))}
               </div>
@@ -191,12 +240,134 @@ export function KeychainView() {
                     item={item}
                     onEdit={openEditIdentityModal}
                     onDelete={handleDelete}
+                    onContextMenu={handleItemContextMenu}
                   />
                 ))}
               </div>
             )}
           </div>
         </>
+      )}
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "item" && contextMenu.item ? (
+            <>
+              {contextMenu.item.public_key && (
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(contextMenu.item!.public_key);
+                    showCopyToast("Copied public key");
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                >
+                  <Copy size={13} />
+                  <span>Copy Public Key</span>
+                </button>
+              )}
+
+              {contextMenu.item.fingerprint && (
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(contextMenu.item!.fingerprint);
+                    showCopyToast("Copied fingerprint");
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                >
+                  <Copy size={13} />
+                  <span>Copy Fingerprint</span>
+                </button>
+              )}
+
+              {contextMenu.item.username && (
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(contextMenu.item!.username!);
+                    showCopyToast("Copied username");
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                >
+                  <Copy size={13} />
+                  <span>Copy Username</span>
+                </button>
+              )}
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Edit */}
+              <button
+                onClick={() => {
+                  if (contextMenu.item!.kind === "password") {
+                    openEditIdentityModal(contextMenu.item!);
+                  } else {
+                    openEditKeyModal(contextMenu.item!);
+                  }
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Pencil size={13} />
+                <span>Edit Credential</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Delete */}
+              <button
+                onClick={() => {
+                  handleDelete(contextMenu.item!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+              >
+                <Trash2 size={13} />
+                <span>Delete Credential</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New SSH Key */}
+              <button
+                onClick={() => {
+                  openCreateKeyModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Key size={13} />
+                <span>New SSH Key</span>
+              </button>
+
+              {/* New Identity */}
+              <button
+                onClick={() => {
+                  openCreateIdentityModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <UserCheck size={13} />
+                <span>New Password Identity</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Copy Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+          <Check size={13} className="text-[var(--primary)] shrink-0" />
+          <span>{copyToast}</span>
+        </div>
       )}
 
       {/* Modals */}
@@ -216,6 +387,7 @@ interface KeyCardProps {
   onCopy: (item: KeychainItem) => void;
   onEdit: (item: KeychainItem) => void;
   onDelete: (item: KeychainItem) => void;
+  onContextMenu?: (e: React.MouseEvent, item: KeychainItem) => void;
 }
 
 const KeyCard = memo(function KeyCard({
@@ -224,9 +396,13 @@ const KeyCard = memo(function KeyCard({
   onCopy,
   onEdit,
   onDelete,
+  onContextMenu,
 }: KeyCardProps) {
   return (
-    <div className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs">
+    <div
+      onContextMenu={(e) => onContextMenu?.(e, item)}
+      className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs"
+    >
       <div className="flex items-start gap-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--secondary)]/15 text-[var(--secondary)]">
           <Key size={16} />
@@ -297,15 +473,20 @@ interface IdentityCardProps {
   item: KeychainItem;
   onEdit: (item: KeychainItem) => void;
   onDelete: (item: KeychainItem) => void;
+  onContextMenu?: (e: React.MouseEvent, item: KeychainItem) => void;
 }
 
 const IdentityCard = memo(function IdentityCard({
   item,
   onEdit,
   onDelete,
+  onContextMenu,
 }: IdentityCardProps) {
   return (
-    <div className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs">
+    <div
+      onContextMenu={(e) => onContextMenu?.(e, item)}
+      className="group relative rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 transition-colors hover:border-[var(--primary)]/40 shadow-xs"
+    >
       <div className="flex items-start gap-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--tertiary)]/15 text-[var(--tertiary)]">
           <UserCheck size={16} />

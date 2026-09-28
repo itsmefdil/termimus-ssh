@@ -1,4 +1,4 @@
-import { useEffect, useCallback, memo } from "react";
+import { useEffect, useState, useCallback, memo } from "react";
 import {
   ArrowLeftRight,
   Plus,
@@ -9,6 +9,9 @@ import {
   Server,
   Loader2,
   AlertCircle,
+  Copy,
+  Check,
+  RefreshCw,
 } from "lucide-react";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -32,6 +35,52 @@ export function TunnelView() {
 
   const { hosts } = useHostStore();
 
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    type: "rule" | "background";
+    rule?: PortForwardRule;
+  } | null>(null);
+
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const showCopyToast = useCallback((msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => {
+      setCopyToast((prev) => (prev === msg ? null : prev));
+    }, 1800);
+  }, []);
+
+  const handleRuleContextMenu = useCallback((e: React.MouseEvent, rule: PortForwardRule) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 280);
+    setContextMenu({ x, y, type: "rule", rule });
+  }, []);
+
+  const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 150);
+    setContextMenu({ x, y, type: "background" });
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
   useEffect(() => {
     if (rules.length === 0) {
       refresh();
@@ -54,7 +103,10 @@ export function TunnelView() {
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none">
+    <div
+      onContextMenu={handleBackgroundContextMenu}
+      className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none"
+    >
       <TunnelModal />
 
       {/* Header */}
@@ -121,12 +173,140 @@ export function TunnelView() {
                   onToggle={toggleTunnel}
                   onEdit={openEditModal}
                   onDelete={handleDelete}
+                  onContextMenu={handleRuleContextMenu}
                 />
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "rule" && contextMenu.rule ? (
+            <>
+              {/* Start/Stop Tunnel */}
+              <button
+                onClick={() => {
+                  toggleTunnel(contextMenu.rule!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                {activeRuleIds.has(contextMenu.rule.id) ? (
+                  <>
+                    <Square size={13} />
+                    <span>Stop Tunnel</span>
+                  </>
+                ) : (
+                  <>
+                    <Play size={13} />
+                    <span>Start Tunnel</span>
+                  </>
+                )}
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Copy Local Address */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(
+                    `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
+                  );
+                  showCopyToast("Copied local address");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Local Address</span>
+              </button>
+
+              {/* Copy Remote Address */}
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(
+                    `${contextMenu.rule!.remote_address}:${contextMenu.rule!.remote_port}`
+                  );
+                  showCopyToast("Copied remote address");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Copy size={13} />
+                <span>Copy Remote Address</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Edit */}
+              <button
+                onClick={() => {
+                  openEditModal(contextMenu.rule!);
+                  setContextMenu(null);
+                }}
+                disabled={activeRuleIds.has(contextMenu.rule.id)}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Pencil size={13} />
+                <span>Edit Rule</span>
+              </button>
+
+              {/* Delete */}
+              <button
+                onClick={() => {
+                  handleDelete(contextMenu.rule!.id, contextMenu.rule!.label);
+                  setContextMenu(null);
+                }}
+                disabled={activeRuleIds.has(contextMenu.rule.id)}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Trash2 size={13} />
+                <span>Delete Rule</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* New Rule */}
+              <button
+                onClick={() => {
+                  openCreateModal();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+              >
+                <Plus size={13} />
+                <span>New Port Forward Rule</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  refresh();
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <RefreshCw size={13} />
+                <span>Refresh Rules</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Copy Toast Notification */}
+      {copyToast && (
+        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+          <Check size={13} className="text-[var(--primary)] shrink-0" />
+          <span>{copyToast}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -143,6 +323,7 @@ interface TunnelCardProps {
   onToggle: (rule: PortForwardRule) => void;
   onEdit: (rule: PortForwardRule) => void;
   onDelete: (id: string, label?: string) => void;
+  onContextMenu?: (e: React.MouseEvent, rule: PortForwardRule) => void;
 }
 
 const TunnelCard = memo(function TunnelCard({
@@ -153,9 +334,11 @@ const TunnelCard = memo(function TunnelCard({
   onToggle,
   onEdit,
   onDelete,
+  onContextMenu,
 }: TunnelCardProps) {
   return (
     <div
+      onContextMenu={(e) => onContextMenu?.(e, rule)}
       className={`flex flex-col rounded-xl border p-4 transition-colors shadow-xs ${
         isActive
           ? "border-[var(--success)]/40 bg-[var(--success)]/5 shadow-md shadow-[var(--success)]/5"
