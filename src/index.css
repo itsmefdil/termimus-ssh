@@ -96,9 +96,9 @@
     background-color: var(--canvas);
     color: var(--text-primary);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
+    /* Let the OS/fontconfig pick rendering (subpixel AA on LCDs,
+       hinting profiles). Forced grayscale made text look thin/soft. */
+    text-rendering: geometricPrecision;
     overflow: hidden;
     user-select: none;
   }

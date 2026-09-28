@@ -82,8 +82,8 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
                 />
               </div>
               <span
-                className={`flex-1 text-left truncate text-[13px] font-medium transition-opacity ${TRANSITION} ${
-                  isCollapsed ? "opacity-0" : "opacity-100"
+                className={`flex-1 text-left truncate text-[13px] transition-opacity ${TRANSITION} ${
+                  isCollapsed ? "opacity-0" : active ? "font-bold opacity-100" : "font-medium opacity-100"
                 }`}
               >
                 {label}
