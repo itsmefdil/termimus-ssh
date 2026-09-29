@@ -4,6 +4,9 @@ import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { Host } from "../../lib/api";
 
+// openSession is a single stable action reference; selecting it directly avoids
+// subscribing this modal to unrelated useSessionStore state changes.
+
 interface QuickConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -12,7 +15,7 @@ interface QuickConnectModalProps {
 
 export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectModalProps) {
   const { hosts, openCreateModal } = useHostStore();
-  const { openSession } = useSessionStore();
+  const openSession = useSessionStore((s) => s.openSession);
   const [input, setInput] = useState("");
 
   useEffect(() => {

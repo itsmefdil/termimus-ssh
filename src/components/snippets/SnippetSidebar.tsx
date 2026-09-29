@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -45,7 +46,17 @@ export function SnippetSidebar() {
     isGroupBroadcastActive,
     toggleGroupBroadcast,
     sendSnippetToTerminals,
-  } = useSessionStore();
+  } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      rootPane: s.rootPane,
+      activeTabId: s.activeTabId,
+      activeGroupId: s.activeGroupId,
+      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      toggleGroupBroadcast: s.toggleGroupBroadcast,
+      sendSnippetToTerminals: s.sendSnippetToTerminals,
+    }))
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);

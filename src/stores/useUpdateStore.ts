@@ -31,7 +31,7 @@ export function isNewerVersion(latest: string, current: string): boolean {
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
-  currentVersion: "0.4.3",
+  currentVersion: "0.4.4",
   latestVersion: null,
   hasUpdate: false,
   releaseUrl: "https://github.com/termimus/termimus-ssh/releases",
@@ -47,7 +47,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         set({ currentVersion: ver });
       }
     } catch {
-      // Running outside Tauri or preview; keep default 0.4.3
+      // Running outside Tauri or preview; keep default 0.4.4
     }
 
     // Auto-check on launch (fire & forget)

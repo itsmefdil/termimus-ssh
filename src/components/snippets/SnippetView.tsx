@@ -15,6 +15,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -30,7 +31,13 @@ export function SnippetView() {
     openCreateModal,
     openEditModal,
   } = useSnippetStore();
-  const { tabs, activeTabId, sendTextToActiveSession } = useSessionStore();
+  const { tabs, activeTabId, sendTextToActiveSession } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      activeTabId: s.activeTabId,
+      sendTextToActiveSession: s.sendTextToActiveSession,
+    }))
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
   const [runFeedback, setRunFeedback] = useState<{ id: string; ok: boolean } | null>(null);

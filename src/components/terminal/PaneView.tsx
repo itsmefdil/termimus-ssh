@@ -7,6 +7,7 @@ import {
   Loader2,
   Radio,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { PaneLeaf } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -34,7 +35,24 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     openSession,
     isGroupBroadcastActive,
     toggleGroupBroadcast,
-  } = useSessionStore();
+  } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      rootPane: s.rootPane,
+      activePaneId: s.activePaneId,
+      activeGroupId: s.activeGroupId,
+      maximizedPaneId: s.maximizedPaneId,
+      focusPane: s.focusPane,
+      setPaneTab: s.setPaneTab,
+      closeSession: s.closeSession,
+      toggleMaximizePane: s.toggleMaximizePane,
+      splitPane: s.splitPane,
+      startDragTab: s.startDragTab,
+      openSession: s.openSession,
+      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      toggleGroupBroadcast: s.toggleGroupBroadcast,
+    }))
+  );
 
   const hosts = useHostStore((s) => s.hosts);
   const isFocused = activePaneId === pane.id;

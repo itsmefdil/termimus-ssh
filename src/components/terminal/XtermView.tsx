@@ -254,7 +254,13 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const [logs, setLogs] = useState<ConnectionLog[]>([]);
   const [currentStep, setCurrentStep] = useState(1);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
+  // Initialize from the persistent pool synchronously (not in an effect) so a
+  // remount of an already-connected session (e.g. moving into a new split
+  // layout) doesn't flash the ConnectionProgress loading screen for a frame
+  // before the effect corrects it.
+  const [isConnected, setIsConnected] = useState(
+    () => terminalPool.get(sessionId)?.hasConnected ?? false
+  );
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;

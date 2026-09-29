@@ -1,8 +1,16 @@
 import { X, Terminal as TerminalIcon, Loader2 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeSession } = useSessionStore();
+  const { tabs, activeTabId, setActiveTab, closeSession } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      activeTabId: s.activeTabId,
+      setActiveTab: s.setActiveTab,
+      closeSession: s.closeSession,
+    }))
+  );
 
   if (tabs.length === 0) {
     return (

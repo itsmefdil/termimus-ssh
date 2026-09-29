@@ -10,6 +10,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -32,7 +33,9 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
     deletePreset,
   } = useWorkspaceStore();
 
-  const { groups, activeGroupId, tabs } = useSessionStore();
+  const { groups, activeGroupId, tabs } = useSessionStore(
+    useShallow((s) => ({ groups: s.groups, activeGroupId: s.activeGroupId, tabs: s.tabs }))
+  );
   const { hosts } = useHostStore();
 
   const [searchQuery, setSearchQuery] = useState("");

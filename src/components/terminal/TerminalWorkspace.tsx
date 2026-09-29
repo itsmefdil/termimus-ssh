@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
@@ -27,7 +28,22 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
     endDragTab,
     isGroupBroadcastActive,
     toggleGroupBroadcast,
-  } = useSessionStore();
+  } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      rootPane: s.rootPane,
+      activeGroupId: s.activeGroupId,
+      maximizedPaneId: s.maximizedPaneId,
+      toggleMaximizePane: s.toggleMaximizePane,
+      isDraggingTab: s.isDraggingTab,
+      draggedTabId: s.draggedTabId,
+      pointerPos: s.pointerPos,
+      updateDragPos: s.updateDragPos,
+      endDragTab: s.endDragTab,
+      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      toggleGroupBroadcast: s.toggleGroupBroadcast,
+    }))
+  );
 
   // Global pointer tracking for tab drag-and-drop
   useEffect(() => {

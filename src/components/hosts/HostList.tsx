@@ -17,6 +17,7 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSftpStore } from "../../stores/useSftpStore";
@@ -48,9 +49,13 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     deleteFolder,
   } = useHostStore();
 
-  const { openSession, tabs } = useSessionStore();
+  const { openSession, tabs } = useSessionStore(
+    useShallow((s) => ({ openSession: s.openSession, tabs: s.tabs }))
+  );
   const { connectRemote } = useSftpStore();
-  const { pingAll, statusByHostId } = usePingStore();
+  const { pingAll, statusByHostId } = usePingStore(
+    useShallow((s) => ({ pingAll: s.pingAll, statusByHostId: s.statusByHostId }))
+  );
 
   const [selectedTag, setSelectedTag] = useState<string>("All");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);

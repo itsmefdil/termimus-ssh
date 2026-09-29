@@ -320,22 +320,60 @@ impl SessionManager {
         // Worker task: stream server output to frontend & handle incoming commands (write & resize)
         tokio::spawn(async move {
             let mut channel = channel;
+            // Coalesce bursts of output into a single emit instead of one IPC round-trip
+            // per PTY chunk. Chatty sessions (tail -f, htop, build logs) can otherwise
+            // saturate the Tauri event bridge with tiny emits over a long-running session.
+            let mut pending: Vec<u8> = Vec::new();
+            let flush_delay = tokio::time::Duration::from_millis(8);
+            let mut flush_deadline: Option<tokio::time::Instant> = None;
+
             loop {
+                let sleep = async {
+                    match flush_deadline {
+                        Some(deadline) => tokio::time::sleep_until(deadline).await,
+                        None => std::future::pending::<()>().await,
+                    }
+                };
+
                 tokio::select! {
                     msg = channel.wait() => {
                         match msg {
                             Some(russh::ChannelMsg::Data { ref data }) => {
-                                let _ = app_for_output.emit(&event_name, data.to_vec());
+                                pending.extend_from_slice(data);
+                                if flush_deadline.is_none() {
+                                    flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
+                                }
+                                // Cap buffered size so a huge single burst still flushes promptly.
+                                if pending.len() >= 64 * 1024 {
+                                    let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                                    flush_deadline = None;
+                                }
                             }
                             Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                                let _ = app_for_output.emit(&event_name, data.to_vec());
+                                pending.extend_from_slice(data);
+                                if flush_deadline.is_none() {
+                                    flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
+                                }
+                                if pending.len() >= 64 * 1024 {
+                                    let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                                    flush_deadline = None;
+                                }
                             }
                             Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
+                                if !pending.is_empty() {
+                                    let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                                }
                                 let _ = app_for_output.emit(&closed_event, sid_for_output.clone());
                                 break;
                             }
                             _ => {}
                         }
+                    }
+                    _ = sleep => {
+                        if !pending.is_empty() {
+                            let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                        }
+                        flush_deadline = None;
                     }
                     cmd = cmd_rx.recv() => {
                         match cmd {

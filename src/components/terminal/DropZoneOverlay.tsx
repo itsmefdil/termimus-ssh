@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { Columns2, Rows2, Move } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSessionStore, DropZone } from "../../stores/useSessionStore";
 
 interface DropZoneOverlayProps {
@@ -8,7 +9,13 @@ interface DropZoneOverlayProps {
 
 export function DropZoneOverlay({ paneId }: DropZoneOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isDraggingTab, dragTarget, setDragTarget } = useSessionStore();
+  const { isDraggingTab, dragTarget, setDragTarget } = useSessionStore(
+    useShallow((s) => ({
+      isDraggingTab: s.isDraggingTab,
+      dragTarget: s.dragTarget,
+      setDragTarget: s.setDragTarget,
+    }))
+  );
 
   if (!isDraggingTab) return null;
 

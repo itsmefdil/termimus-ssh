@@ -20,6 +20,7 @@ import {
   CopyPlus,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useShallow } from "zustand/react/shallow";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
@@ -68,7 +69,20 @@ export function Header({
     draggedTabId,
     reorderGroups,
     broadcastGroupIds,
-  } = useSessionStore();
+  } = useSessionStore(
+    useShallow((s) => ({
+      tabs: s.tabs,
+      groups: s.groups,
+      activeGroupId: s.activeGroupId,
+      setActiveGroup: s.setActiveGroup,
+      closeGroup: s.closeGroup,
+      startDragTab: s.startDragTab,
+      isDraggingTab: s.isDraggingTab,
+      draggedTabId: s.draggedTabId,
+      reorderGroups: s.reorderGroups,
+      broadcastGroupIds: s.broadcastGroupIds,
+    }))
+  );
 
   const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
