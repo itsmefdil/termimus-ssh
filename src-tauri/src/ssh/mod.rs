@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 use crate::db::models::KnownHost;
 use crate::db::Database;
@@ -137,14 +137,14 @@ pub struct SshSession {
 }
 
 pub struct SessionManager {
-    sessions: Mutex<HashMap<String, Arc<SshSession>>>,
+    sessions: RwLock<HashMap<String, Arc<SshSession>>>,
     connecting: Mutex<HashSet<String>>,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         SessionManager {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: RwLock::new(HashMap::new()),
             connecting: Mutex::new(HashSet::new()),
         }
     }
@@ -172,7 +172,7 @@ impl SessionManager {
 
         // Clean up any stale existing session with this ID before starting fresh
         {
-            let mut sessions = self.sessions.lock().await;
+            let mut sessions = self.sessions.write().await;
             if let Some(old_session) = sessions.remove(&session_id) {
                 let _ = old_session.handle.disconnect(Disconnect::ByApplication, "", "en").await;
             }
@@ -224,7 +224,23 @@ impl SessionManager {
             port,
             db,
         };
-        let mut handle = match client::connect(config, (address.as_str(), port), handler).await {
+
+        // Explicitly connect the TCP stream and disable Nagle's algorithm (TCP_NODELAY).
+        // Standard russh::client::connect leaves Nagle enabled by default on Tokio TcpStream,
+        // which combined with Linux delayed ACK can introduce 40-200ms delay per typed keystroke.
+        let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
+            Ok(s) => {
+                let _ = s.set_nodelay(true);
+                s
+            }
+            Err(e) => {
+                let msg = format!("Connection failed: {e}");
+                emit_progress(1, "error", &msg, true);
+                return Err(msg);
+            }
+        };
+
+        let mut handle = match client::connect_stream(config, socket, handler).await {
             Ok(h) => h,
             Err(e) => {
                 let msg = format!("Connection failed: {e}");
@@ -308,7 +324,7 @@ impl SessionManager {
         });
 
         {
-            let mut sessions = self.sessions.lock().await;
+            let mut sessions = self.sessions.write().await;
             sessions.insert(session_id.clone(), session.clone());
         }
 
@@ -320,9 +336,12 @@ impl SessionManager {
         // Worker task: stream server output to frontend & handle incoming commands (write & resize)
         tokio::spawn(async move {
             let mut channel = channel;
-            // Coalesce bursts of output into a single emit instead of one IPC round-trip
-            // per PTY chunk. Chatty sessions (tail -f, htop, build logs) can otherwise
-            // saturate the Tauri event bridge with tiny emits over a long-running session.
+            // Adaptive output coalescing:
+            // 1. When the channel is idle (interactive keystroke echo, prompt display),
+            //    emit immediately (0ms latency) and start a short cooldown timer.
+            // 2. Any subsequent bursts of output arriving within the cooldown (e.g. cat,
+            //    htop, build logs) are accumulated into `pending` and emitted in ~8ms batches
+            //    (or at 64KB cap) to prevent saturating Tauri's IPC event bridge.
             let mut pending: Vec<u8> = Vec::new();
             let flush_delay = tokio::time::Duration::from_millis(8);
             let mut flush_deadline: Option<tokio::time::Instant> = None;
@@ -339,24 +358,34 @@ impl SessionManager {
                     msg = channel.wait() => {
                         match msg {
                             Some(russh::ChannelMsg::Data { ref data }) => {
-                                pending.extend_from_slice(data);
-                                if flush_deadline.is_none() {
-                                    flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
-                                }
-                                // Cap buffered size so a huge single burst still flushes promptly.
-                                if pending.len() >= 64 * 1024 {
-                                    let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
-                                    flush_deadline = None;
+                                match flush_deadline {
+                                    None => {
+                                        // Idle stream: emit interactive echo immediately (0ms delay)
+                                        let _ = app_for_output.emit(&event_name, data.to_vec());
+                                        flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
+                                    }
+                                    Some(_) => {
+                                        pending.extend_from_slice(data);
+                                        if pending.len() >= 64 * 1024 {
+                                            let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                                            flush_deadline = None;
+                                        }
+                                    }
                                 }
                             }
                             Some(russh::ChannelMsg::ExtendedData { ref data, .. }) => {
-                                pending.extend_from_slice(data);
-                                if flush_deadline.is_none() {
-                                    flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
-                                }
-                                if pending.len() >= 64 * 1024 {
-                                    let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
-                                    flush_deadline = None;
+                                match flush_deadline {
+                                    None => {
+                                        let _ = app_for_output.emit(&event_name, data.to_vec());
+                                        flush_deadline = Some(tokio::time::Instant::now() + flush_delay);
+                                    }
+                                    Some(_) => {
+                                        pending.extend_from_slice(data);
+                                        if pending.len() >= 64 * 1024 {
+                                            let _ = app_for_output.emit(&event_name, std::mem::take(&mut pending));
+                                            flush_deadline = None;
+                                        }
+                                    }
                                 }
                             }
                             Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
@@ -397,7 +426,7 @@ impl SessionManager {
     }
 
     pub async fn write(&self, session_id: &str, data: Vec<u8>) -> Result<(), String> {
-        let sessions = self.sessions.lock().await;
+        let sessions = self.sessions.read().await;
         let session = sessions
             .get(session_id)
             .ok_or_else(|| "Session not found".to_string())?;
@@ -408,7 +437,7 @@ impl SessionManager {
     }
 
     pub async fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let sessions = self.sessions.lock().await;
+        let sessions = self.sessions.read().await;
         let session = sessions
             .get(session_id)
             .ok_or_else(|| "Session not found".to_string())?;
@@ -422,7 +451,7 @@ impl SessionManager {
     }
 
     pub async fn disconnect(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock().await;
+        let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.remove(session_id) {
             let _ = session
                 .handle

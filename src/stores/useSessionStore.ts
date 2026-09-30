@@ -19,6 +19,8 @@ import {
 } from "../lib/layoutTree";
 import { disposeTerminalSession } from "../components/terminal/XtermView";
 
+const textEncoder = new TextEncoder();
+
 export interface SshTab {
   id: string; // session_id
   hostId: string;
@@ -747,7 +749,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return false;
     }
     const payload = text.endsWith("\n") ? text : `${text}\n`;
-    const bytes = Array.from(new TextEncoder().encode(payload));
+    const bytes = Array.from(textEncoder.encode(payload));
 
     const targetSessionIds = getBroadcastTargetSessionIds(activeTabId);
     await Promise.all(
@@ -769,7 +771,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     const payload = text.endsWith("\n") ? text : `${text}\n`;
-    const bytes = Array.from(new TextEncoder().encode(payload));
+    const bytes = Array.from(textEncoder.encode(payload));
 
     let targetSessionIds: string[] = [];
 

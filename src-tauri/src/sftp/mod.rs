@@ -59,7 +59,14 @@ impl SftpManager {
             port,
             db,
         };
-        let mut handle = client::connect(config, (address.as_str(), port), handler)
+        let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
+            Ok(s) => {
+                let _ = s.set_nodelay(true);
+                s
+            }
+            Err(e) => return Err(format!("SFTP TCP connection failed: {e}")),
+        };
+        let mut handle = client::connect_stream(config, socket, handler)
             .await
             .map_err(|e| format!("SFTP SSH connection failed: {e}"))?;
 

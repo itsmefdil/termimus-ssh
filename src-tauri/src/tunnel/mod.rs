@@ -65,7 +65,14 @@ impl TunnelManager {
             port,
             db,
         };
-        let mut handle = client::connect(config, (address.as_str(), port), handler)
+        let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
+            Ok(s) => {
+                let _ = s.set_nodelay(true);
+                s
+            }
+            Err(e) => return Err(format!("Tunnel TCP connection failed: {e}")),
+        };
+        let mut handle = client::connect_stream(config, socket, handler)
             .await
             .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
 
@@ -157,6 +164,7 @@ async fn forward_connection(
     originator_ip: String,
     originator_port: u32,
 ) -> Result<(), String> {
+    let _ = stream.set_nodelay(true);
     let mut channel = handle
         .channel_open_direct_tcpip(remote_address, remote_port as u32, originator_ip, originator_port)
         .await

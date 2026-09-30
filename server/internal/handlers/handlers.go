@@ -32,7 +32,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "ok",
 		"service": "termimus-sync-server",
-		"version": "0.4.6",
+		"version": "0.4.7",
 	})
 }
 

@@ -55,6 +55,9 @@ interface TerminalSessionEntry {
 // React layout reconciliations (splitting, moving tabs, un-splitting, resizing).
 const terminalPool = new Map<string, TerminalSessionEntry>();
 
+// Shared module-level text encoder to prevent GC pressure during high-speed typing
+const textEncoder = new TextEncoder();
+
 function checkIsMac(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
   return /Macintosh|Mac OS X/i.test(navigator.userAgent);
@@ -512,7 +515,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
       // Keystroke forwarding (supports broadcast to interconnected split panes)
       const dataDisposable = term.onData((data) => {
-        const bytes = Array.from(new TextEncoder().encode(data));
+        const bytes = Array.from(textEncoder.encode(data));
         const targetSessionIds = useSessionStore
           .getState()
           .getBroadcastTargetSessionIds(sessionId);
