@@ -21,7 +21,7 @@ interface HostModalProps {
 }
 
 export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
-  const { isHostModalOpen, editingHost, defaultFolderId, closeHostModal, saveHost, folders } =
+  const { isHostModalOpen, editingHost, templateHost, defaultFolderId, closeHostModal, saveHost, folders } =
     useHostStore();
   const { items: keychainItems } = useKeychainStore();
 
@@ -62,6 +62,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
   useEffect(() => {
     setShowPassword(false);
     if (editingHost) {
+      // ── EDIT mode ──────────────────────────────────────────────────────────
       setLabel(editingHost.label);
       setAddress(editingHost.address);
       setPort(editingHost.port);
@@ -94,7 +95,27 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
             setPasswordLoading(false);
           });
       }
+    } else if (templateHost) {
+      // ── DUPLICATE mode: pre-fill all configuration from the template host ──
+      setLabel(`[Copy] ${templateHost.label}`);
+      setAddress(templateHost.address);
+      setPort(templateHost.port);
+      setUsername(templateHost.username);
+      const isPrivateKey = templateHost.auth_method === "private_key";
+      setAuthMethod(isPrivateKey ? "private_key" : "password");
+      setTagInput(templateHost.tags.join(", "));
+      setFolderId(templateHost.folder_id ?? defaultFolderId ?? "");
+      setOsIcon(templateHost.os_icon ?? "");
+
+      // If source host used a reusable Keychain item, preserve that link.
+      // If it used an anonymous inline credential, clear it so user supplies new secret.
+      const isKeychain = keychainItems.some(
+        (i) => i.id === templateHost.credential_id
+      );
+      setSelectedCredentialId(isKeychain ? (templateHost.credential_id ?? "") : "");
+      setSecret("");
     } else {
+      // ── CREATE NEW mode ───────────────────────────────────────────────────
       setLabel("");
       setAddress("");
       setPort(22);
@@ -107,7 +128,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setOsIcon("");
     }
     setError(null);
-  }, [editingHost, defaultFolderId, isHostModalOpen]);
+  }, [editingHost, templateHost, defaultFolderId, isHostModalOpen]);
 
   // When a keychain item is selected, update default username if not set
   function handleSelectCredential(id: string) {

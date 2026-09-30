@@ -1149,12 +1149,19 @@ pub async fn ping_hosts(
 ) -> Result<Vec<PingResult>, String> {
     let hosts = state.db.list_hosts().map_err(|e| e.to_string())?;
 
+    // Throttled concurrency pool: at most 8 simultaneous TCP connects
+    // to prevent router congestion, socket exhaustion, or triggering firewall rate limits.
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(8));
     let mut handles = Vec::new();
+
     for host in hosts {
         let host_id = host.id.clone();
         let address = host.address.clone();
         let port = host.port;
+        let sem = semaphore.clone();
+
         handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
             let latency_ms = tcp_ping_one(address, port).await;
             PingResult {
                 host_id,

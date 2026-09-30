@@ -11,6 +11,7 @@ interface HostState {
   isHostModalOpen: boolean;
   editingHost: Host | null;
   defaultFolderId: string | null;
+  templateHost: Host | null;
 
   isFolderModalOpen: boolean;
   editingFolder: Folder | null;
@@ -26,6 +27,7 @@ interface HostState {
   setSelectedTag: (tag: string | null) => void;
   setSearchQuery: (query: string) => void;
   openCreateModal: (folderId?: string) => void;
+  openDuplicateModal: (host: Host) => void;
   openEditModal: (host: Host) => void;
   closeHostModal: () => void;
 
@@ -43,12 +45,12 @@ export const useHostStore = create<HostState>((set, get) => ({
   isHostModalOpen: false,
   editingHost: null,
   defaultFolderId: null,
+  templateHost: null,
 
   isFolderModalOpen: false,
   editingFolder: null,
 
   refresh: async () => {
-    // Only flash isLoading when we have no cached data to show
     if (get().hosts.length === 0 && get().folders.length === 0) {
       set({ isLoading: true });
     }
@@ -94,12 +96,23 @@ export const useHostStore = create<HostState>((set, get) => ({
 
   setSelectedTag: (tag) => set({ selectedTag: tag }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+
   openCreateModal: (folderId?: string) =>
-    set({ isHostModalOpen: true, editingHost: null, defaultFolderId: folderId ?? null }),
+    set({ isHostModalOpen: true, editingHost: null, templateHost: null, defaultFolderId: folderId ?? null }),
+
+  openDuplicateModal: (host: Host) =>
+    set({
+      isHostModalOpen: true,
+      editingHost: null,
+      templateHost: host,
+      defaultFolderId: host.folder_id ?? null,
+    }),
+
   openEditModal: (host) =>
-    set({ isHostModalOpen: true, editingHost: host, defaultFolderId: null }),
+    set({ isHostModalOpen: true, editingHost: host, templateHost: null, defaultFolderId: null }),
+
   closeHostModal: () =>
-    set({ isHostModalOpen: false, editingHost: null, defaultFolderId: null }),
+    set({ isHostModalOpen: false, editingHost: null, templateHost: null, defaultFolderId: null }),
 
   openCreateFolderModal: () => set({ isFolderModalOpen: true, editingFolder: null }),
   openEditFolderModal: (folder) => set({ isFolderModalOpen: true, editingFolder: folder }),

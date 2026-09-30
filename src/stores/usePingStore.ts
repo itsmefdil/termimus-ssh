@@ -19,9 +19,14 @@ export const usePingStore = create<PingState>((set, get) => ({
   isPinging: false,
 
   pingAll: async () => {
+    // Skip if already in-flight
     if (get().isPinging) return;
-    set({ isPinging: true });
 
+    // Skip if tab/window is hidden — no point burning battery/network when
+    // the user isn't looking at the app.
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+
+    set({ isPinging: true });
     try {
       const results = await api.pingHosts();
       const now = Date.now();

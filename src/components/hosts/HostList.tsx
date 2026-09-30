@@ -9,13 +9,16 @@ import {
   Plus,
   FolderPlus,
   LayoutGrid,
+  List,
   ArrowLeft,
   Search,
   MoreVertical,
   Copy,
+  CopyPlus,
+  Columns2,
+  Rows2,
   RefreshCw,
   Check,
-  Loader2,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useHostStore } from "../../stores/useHostStore";
@@ -26,8 +29,10 @@ import { useConfirmStore } from "../../stores/useConfirmStore";
 import { FolderModal } from "./FolderModal";
 import { Host, Folder } from "../../lib/api";
 import { DistroBadge } from "./DistroBadge";
+import { HostListRow } from "./HostListRow";
 
-const PING_INTERVAL_MS = 20000;
+// Ping interval: 60s is gentle on router & network, battery-friendly on laptops
+const PING_INTERVAL_MS = 60000;
 
 interface HostListProps {
   onOpenTerminal?: () => void;
@@ -42,6 +47,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     searchQuery,
     setSearchQuery,
     openCreateModal,
+    openDuplicateModal,
     openEditModal,
     deleteHost,
     openCreateFolderModal,
@@ -49,13 +55,33 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     deleteFolder,
   } = useHostStore();
 
-  const { openSession, tabs } = useSessionStore(
-    useShallow((s) => ({ openSession: s.openSession, tabs: s.tabs }))
+  const { openSession, openSessionInSplit, tabs, activePaneId } = useSessionStore(
+    useShallow((s) => ({
+      openSession: s.openSession,
+      openSessionInSplit: s.openSessionInSplit,
+      tabs: s.tabs,
+      activePaneId: s.activePaneId,
+    }))
   );
   const { connectRemote } = useSftpStore();
   const { pingAll, statusByHostId } = usePingStore(
     useShallow((s) => ({ pingAll: s.pingAll, statusByHostId: s.statusByHostId }))
   );
+
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    try {
+      return (localStorage.getItem("termimus_hosts_view_mode") as "grid" | "list") || "grid";
+    } catch {
+      return "grid";
+    }
+  });
+
+  const handleToggleView = useCallback((mode: "grid" | "list") => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem("termimus_hosts_view_mode", mode);
+    } catch {}
+  }, []);
 
   const [selectedTag, setSelectedTag] = useState<string>("All");
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -81,7 +107,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     e.preventDefault();
     e.stopPropagation();
     const x = Math.min(e.clientX, window.innerWidth - 220);
-    const y = Math.min(e.clientY, window.innerHeight - 340);
+    const y = Math.min(e.clientY, window.innerHeight - 380);
     setContextMenu({ x, y, type: "host", host });
   }, []);
 
@@ -115,13 +141,28 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     };
   }, [contextMenu]);
 
-  // Background ping check
+  // Background ping check — visibility-aware, only pings when window is visible
   useEffect(() => {
-    if (hosts.length > 0) {
-      pingAll();
-      const interval = setInterval(pingAll, PING_INTERVAL_MS);
-      return () => clearInterval(interval);
-    }
+    if (hosts.length === 0) return;
+
+    pingAll();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        pingAll();
+      }
+    }, PING_INTERVAL_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        pingAll();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [hosts.length, pingAll]);
 
   // Extract all unique tags
@@ -188,6 +229,15 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
       await openSession(host);
     },
     [onOpenTerminal, openSession]
+  );
+
+  const handleConnectSplit = useCallback(
+    (host: Host, direction: "row" | "column") => {
+      onOpenTerminal?.();
+      const targetPane = activePaneId ?? "root";
+      openSessionInSplit(host, targetPane, direction);
+    },
+    [onOpenTerminal, openSessionInSplit, activePaneId]
   );
 
   const handleSftpClick = useCallback(
@@ -296,8 +346,36 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
             )}
           </div>
 
-          {/* Action Buttons: New Group & New Host (always fully visible, never compressed) */}
+          {/* Right Area: Grid/List Toggle + Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* View Mode Toggle */}
+            <div className="flex items-center rounded-xl border border-[var(--border)] bg-[var(--surface-container)] p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => handleToggleView("grid")}
+                title="Grid Cards View"
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                  viewMode === "grid"
+                    ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-xs"
+                    : "text-[var(--text-muted)] hover:text-white"
+                }`}
+              >
+                <LayoutGrid size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleView("list")}
+                title="Compact List View"
+                className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+                  viewMode === "list"
+                    ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-xs"
+                    : "text-[var(--text-muted)] hover:text-white"
+                }`}
+              >
+                <List size={15} />
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={openCreateFolderModal}
@@ -318,7 +396,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
           </div>
         </div>
 
-        {/* Tag filters (shown on narrower screens so search & action buttons don't squeeze) */}
+        {/* Tag filters (mobile/tablet) */}
         {!selectedFolderId && allTags.length > 0 && (
           <div className="flex lg:hidden items-center gap-1 overflow-x-auto min-w-0 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
@@ -416,7 +494,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                 Add Host Here
               </button>
             </div>
-          ) : (
+          ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {hostsInActiveFolder.map((host) => (
                 <HostCard
@@ -424,12 +502,45 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                   host={host}
                   isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
                   isOnline={statusByHostId[host.id]?.online ?? true}
+                  latencyMs={statusByHostId[host.id]?.latencyMs}
                   isMenuOpen={activeMenuHostId === host.id}
                   onConnect={handleConnect}
                   onToggleMenu={handleToggleMenu}
                   onSftp={handleSftpClick}
                   onTunnels={onOpenTunnels}
                   onEdit={openEditModal}
+                  onDuplicate={openDuplicateModal}
+                  onDelete={handleDelete}
+                  onContextMenu={handleHostContextMenu}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {/* Table Column Header */}
+              <div className="flex items-center gap-3.5 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
+                <span className="w-8 shrink-0 text-center">OS</span>
+                <span className="w-48 sm:w-56 md:w-64 shrink-0">Name</span>
+                <span className="w-40 sm:w-48 md:w-52 shrink-0">Address</span>
+                <span className="hidden sm:block w-24 md:w-32 shrink-0">User</span>
+                <span className="hidden lg:block flex-1 min-w-0">Tags</span>
+                <span className="w-16 shrink-0 text-right ml-auto pr-2">Actions</span>
+              </div>
+
+              {hostsInActiveFolder.map((host) => (
+                <HostListRow
+                  key={host.id}
+                  host={host}
+                  isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
+                  isOnline={statusByHostId[host.id]?.online ?? true}
+                  latencyMs={statusByHostId[host.id]?.latencyMs}
+                  isMenuOpen={activeMenuHostId === host.id}
+                  onConnect={handleConnect}
+                  onToggleMenu={handleToggleMenu}
+                  onSftp={handleSftpClick}
+                  onTunnels={onOpenTunnels}
+                  onEdit={openEditModal}
+                  onDuplicate={openDuplicateModal}
                   onDelete={handleDelete}
                   onContextMenu={handleHostContextMenu}
                 />
@@ -440,7 +551,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
       ) : (
         /* VIEW 2: ROOT VIEW (GROUPS ON TOP, RECENT HOSTS BELOW) */
         <div className="space-y-7">
-          {/* GROUPS SECTION (Termius style cards) */}
+          {/* GROUPS SECTION */}
           {folders.length > 0 && (
             <div>
               <div className="mb-3 flex items-center justify-between">
@@ -497,7 +608,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                   </button>
                 )}
               </div>
-            ) : (
+            ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {sortedRecentHosts.map((host) => (
                   <HostCard
@@ -505,12 +616,45 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                     host={host}
                     isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
                     isOnline={statusByHostId[host.id]?.online ?? true}
+                    latencyMs={statusByHostId[host.id]?.latencyMs}
                     isMenuOpen={activeMenuHostId === host.id}
                     onConnect={handleConnect}
                     onToggleMenu={handleToggleMenu}
                     onSftp={handleSftpClick}
                     onTunnels={onOpenTunnels}
                     onEdit={openEditModal}
+                    onDuplicate={openDuplicateModal}
+                    onDelete={handleDelete}
+                    onContextMenu={handleHostContextMenu}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {/* Table Column Header */}
+                <div className="flex items-center gap-3.5 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] select-none">
+                  <span className="w-8 shrink-0 text-center">OS</span>
+                  <span className="w-48 sm:w-56 md:w-64 shrink-0">Name</span>
+                  <span className="w-40 sm:w-48 md:w-52 shrink-0">Address</span>
+                  <span className="hidden sm:block w-24 md:w-32 shrink-0">User</span>
+                  <span className="hidden lg:block flex-1 min-w-0">Tags</span>
+                  <span className="w-16 shrink-0 text-right ml-auto pr-2">Actions</span>
+                </div>
+
+                {sortedRecentHosts.map((host) => (
+                  <HostListRow
+                    key={host.id}
+                    host={host}
+                    isConnecting={tabs.some((t) => t.hostId === host.id && t.connecting)}
+                    isOnline={statusByHostId[host.id]?.online ?? true}
+                    latencyMs={statusByHostId[host.id]?.latencyMs}
+                    isMenuOpen={activeMenuHostId === host.id}
+                    onConnect={handleConnect}
+                    onToggleMenu={handleToggleMenu}
+                    onSftp={handleSftpClick}
+                    onTunnels={onOpenTunnels}
+                    onEdit={openEditModal}
+                    onDuplicate={openDuplicateModal}
                     onDelete={handleDelete}
                     onContextMenu={handleHostContextMenu}
                   />
@@ -530,7 +674,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
         >
           {contextMenu.type === "host" && contextMenu.host ? (
             <>
-              {/* Connect SSH */}
+              {/* Connect SSH (New Tab) */}
               <button
                 onClick={() => {
                   handleConnect(contextMenu.host!);
@@ -542,13 +686,39 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                 <span>Connect SSH</span>
               </button>
 
+              {/* Split Right */}
+              <button
+                onClick={() => {
+                  handleConnectSplit(contextMenu.host!, "row");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Columns2 size={13} />
+                <span>Split Right</span>
+              </button>
+
+              {/* Split Down */}
+              <button
+                onClick={() => {
+                  handleConnectSplit(contextMenu.host!, "column");
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <Rows2 size={13} />
+                <span>Split Down</span>
+              </button>
+
+              <div className="my-1 h-[1px] bg-[var(--border)]" />
+
               {/* SFTP Browser */}
               <button
                 onClick={(e) => {
                   handleSftpClick(e, contextMenu.host!);
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
               >
                 <FolderOpen size={13} />
                 <span>SFTP Files</span>
@@ -560,13 +730,25 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                   onOpenTunnels();
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
               >
                 <Waypoints size={13} />
                 <span>Port Forwarding</span>
               </button>
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+              {/* Duplicate Host */}
+              <button
+                onClick={() => {
+                  openDuplicateModal(contextMenu.host!);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+              >
+                <CopyPlus size={13} />
+                <span>Duplicate Host</span>
+              </button>
 
               {/* Copy SSH Command */}
               <button
@@ -789,12 +971,14 @@ interface HostCardProps {
   host: Host;
   isConnecting?: boolean;
   isOnline: boolean;
+  latencyMs?: number | null;
   isMenuOpen: boolean;
   onConnect: (host: Host) => void;
   onToggleMenu: (hostId: string) => void;
   onSftp: (e: React.MouseEvent, host: Host) => void;
   onTunnels: () => void;
   onEdit: (host: Host) => void;
+  onDuplicate: (host: Host) => void;
   onDelete: (e: React.MouseEvent, host: Host) => void;
   onContextMenu?: (e: React.MouseEvent, host: Host) => void;
 }
@@ -803,12 +987,14 @@ const HostCard = memo(function HostCard({
   host,
   isConnecting,
   isOnline,
+  latencyMs,
   isMenuOpen,
   onConnect,
   onToggleMenu,
   onSftp,
   onTunnels,
   onEdit,
+  onDuplicate,
   onDelete,
   onContextMenu,
 }: HostCardProps) {
@@ -819,35 +1005,55 @@ const HostCard = memo(function HostCard({
       className="group relative flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-3.5 hover:border-[var(--primary)]/60 transition-colors cursor-pointer shadow-sm hover:shadow-md select-none"
     >
       <div className="flex items-center gap-3.5 min-w-0 flex-1">
-        {/* OS Distro Badge (Debian, Ubuntu, Linux, etc.) */}
-        <DistroBadge host={host} />
+        {/* OS Distro Badge with top-left status dot (inside the badge with padding) */}
+        <div className="relative shrink-0">
+          <DistroBadge host={host} />
+
+          {/* Minimal Status dot inside top-left corner without outline */}
+          {isConnecting ? (
+            <span
+              className="absolute top-1.5 left-1.5 z-10 flex h-2 w-2 items-center justify-center rounded-full bg-[var(--primary)]"
+              title="Connecting..."
+            >
+              <span className="h-1 w-1 rounded-full bg-black animate-ping" />
+            </span>
+          ) : !isOnline ? (
+            <span
+              className="absolute top-1.5 left-1.5 z-10 h-1.5 w-1.5 rounded-full bg-rose-500"
+              title="Offline"
+            />
+          ) : latencyMs !== undefined && latencyMs !== null ? (
+            <span
+              className={`absolute top-1.5 left-1.5 z-10 h-1.5 w-1.5 rounded-full ${
+                latencyMs < 80
+                  ? "bg-emerald-400"
+                  : latencyMs < 200
+                  ? "bg-amber-400"
+                  : "bg-rose-400"
+              }`}
+              title={`Online · ${latencyMs}ms`}
+            />
+          ) : (
+            <span
+              className="absolute top-1.5 left-1.5 z-10 h-1.5 w-1.5 rounded-full bg-emerald-400"
+              title="Online"
+            />
+          )}
+        </div>
 
         {/* Host Label & Username */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
-              {host.label}
-            </h3>
-            {isConnecting ? (
-              <span className="flex items-center gap-1 text-[10px] text-[var(--primary)] font-mono font-medium">
-                <Loader2 size={10} className="animate-spin text-[var(--primary)] shrink-0" />
-                <span>Connecting...</span>
-              </span>
-            ) : !isOnline ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--danger)] shrink-0" title="Offline" />
-            ) : null}
-          </div>
-          <p className="truncate text-xs text-[var(--text-muted)] font-mono">
+          <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
+            {host.label}
+          </h3>
+          <p className="truncate text-xs text-[var(--text-muted)] font-mono mt-0.5">
             ssh, {host.username}
           </p>
         </div>
       </div>
 
-      {/* Right Action Menu Button (3 dots) */}
-      <div
-        className="relative ml-2 shrink-0"
-        onClick={(e) => e.stopPropagation()}
-      >
+      {/* Right Area: Action Menu Button (3 dots) */}
+      <div className="relative shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => onToggleMenu(host.id)}
           title="Options"
@@ -858,13 +1064,13 @@ const HostCard = memo(function HostCard({
 
         {/* Dropdown Menu */}
         {isMenuOpen && (
-          <div className="absolute right-0 top-8 z-30 w-36 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute right-0 top-8 z-30 w-40 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-100 text-xs">
             <button
               onClick={() => {
                 onToggleMenu(host.id);
                 onConnect(host);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--primary)] hover:text-[var(--on-primary)] transition"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] hover:bg-[var(--primary)] hover:text-[var(--on-primary)] transition"
             >
               <Terminal size={13} />
               <span>Connect SSH</span>
@@ -875,7 +1081,7 @@ const HostCard = memo(function HostCard({
                 onToggleMenu(host.id);
                 onSftp(e, host);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
             >
               <FolderOpen size={13} />
               <span>SFTP Files</span>
@@ -886,10 +1092,23 @@ const HostCard = memo(function HostCard({
                 onToggleMenu(host.id);
                 onTunnels();
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
             >
               <Waypoints size={13} />
               <span>Tunnels</span>
+            </button>
+
+            <div className="my-1 border-t border-[var(--border)]" />
+
+            <button
+              onClick={() => {
+                onToggleMenu(host.id);
+                onDuplicate(host);
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+            >
+              <CopyPlus size={13} />
+              <span>Duplicate</span>
             </button>
 
             <button
@@ -897,7 +1116,7 @@ const HostCard = memo(function HostCard({
                 onToggleMenu(host.id);
                 onEdit(host);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition"
             >
               <Pencil size={13} />
               <span>Edit Host</span>
@@ -910,7 +1129,7 @@ const HostCard = memo(function HostCard({
                 onToggleMenu(host.id);
                 onDelete(e, host);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-[var(--danger)] hover:bg-[var(--danger)]/20 transition"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[var(--danger)] hover:bg-[var(--danger)]/20 transition"
             >
               <Trash2 size={13} />
               <span>Delete</span>
