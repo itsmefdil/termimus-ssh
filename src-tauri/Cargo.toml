@@ -1,6 +1,6 @@
 [package]
 name = "termimus"
-version = "0.4.4"
+version = "0.4.5"
 description = "Termimus - Self-hosted SSH & Server Manager"
 authors = ["noma"]
 edition = "2021"
@@ -37,6 +37,7 @@ keyring = { version = "4", features = ["default"] }
 russh-sftp = "3.0.0"
 anyhow = "1.0.104"
 tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2.4.0"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

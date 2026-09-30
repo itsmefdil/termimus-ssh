@@ -487,13 +487,16 @@ export function Header({
 
         <div className="h-4 w-[1px] bg-[var(--border)] shrink-0 mx-1" />
 
-        {/* Tabs Row (Each tab represents a Workspace / Split Screen Group) */}
+        {/* Tabs Row (Each tab represents a Workspace / Split Screen Group).
+            flex-1 + min-w-0 (instead of a shrink-0 + hardcoded max-width) lets
+            this row yield space to the Snippets toggle / Sync indicator /
+            window controls on the right; overflow-x-auto scrolls internally
+            once there are more tabs than fit, instead of clipping those
+            right-side controls off-window. */}
         <div
           data-tauri-drag-region
           onContextMenu={(e) => handleTabContextMenu(e)}
-          className={`flex h-full ${
-            isMac ? "max-w-[calc(100%-120px)]" : "max-w-[calc(100%-180px)]"
-          } shrink-0 items-center gap-1 overflow-x-auto px-1`}
+          className="flex h-full min-w-0 shrink items-center gap-1 overflow-x-auto px-1"
         >
           {groups.map((group) => {
             const sessionIds = getAllSessionIdsInTree(group.rootPane);
@@ -541,7 +544,7 @@ export function Header({
                 }
                 className={`group flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-mono min-w-[120px] max-w-[210px] cursor-grab active:cursor-grabbing transition-colors ${
                   isActive
-                    ? "bg-[var(--surface-high)] text-[var(--primary)] font-medium border-b border-[var(--primary)]"
+                    ? "bg-[var(--surface-high)] text-[var(--primary)] font-medium"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
                 }`}
               >

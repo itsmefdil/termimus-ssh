@@ -26,11 +26,22 @@ Termimus — a self-hosted SSH/server manager desktop app (Termius clone), built
 - **Every SSH-family connection (terminal, SFTP, tunnel) must go through `SshClientHandler`** with `db: Arc<Database>` passed in, so Trust-On-First-Use host key verification and MITM protection apply uniformly. Don't construct a bare `russh::client::connect` without it.
 - **Credentials are never stored or transmitted as plaintext.** `Credential.ciphertext`/`nonce` are AES-256-GCM output; encrypt/decrypt only through `VaultManager`. The vault must be unlocked (`state.vault.is_unlocked()`) before touching secrets.
 - **New Tauri commands**: add the `#[tauri::command]` fn in `commands/mod.rs`, add it to `generate_handler![...]` in `lib.rs`, then add a typed wrapper in `src/lib/api.ts`. All three steps are required or the command silently won't be callable from the frontend.
+- **Tauri v2 Capabilities & Permissions**: plugins and window APIs require explicit entries in `src-tauri/capabilities/default.json`. Beware of plugins whose default capability is empty (e.g. `tauri-plugin-clipboard-manager` has `clipboard-manager:default` with `permissions = []` for security); always grant explicit permissions such as `"clipboard-manager:allow-read-text"` and `"clipboard-manager:allow-write-text"`.
+- **Clipboard & Terminal I/O**: WebKitGTK / Tauri on Linux blocks `navigator.clipboard.readText()` when pasting from external applications without explicit per-origin browser permission. Always use `@tauri-apps/plugin-clipboard-manager` (`readText`/`writeText`) as the primary path and fallback to `navigator.clipboard`. In `XtermView.tsx`, use debounce guards (~350ms window with content tracking) to prevent double-paste across keyboard shortcuts and native DOM paste events.
+- **Terminal Lifecycle & Pooling**: instances are cached in `terminalPool` (`XtermView.tsx`) to survive tab switches, splits, and layout changes without reconnecting SSH. Initialize `isConnected` synchronously from the pool entry (never in a delayed effect) to prevent flashing the `ConnectionProgress` overlay during split remounts.
+- **Zustand Performance**: always use `useShallow` from `zustand/react/shallow` when subscribing to non-primitive selectors (arrays, objects) in stores (`useSessionStore`, `usePingStore`, etc.) to prevent cascading re-renders across the component tree.
+- **SSH PTY Streaming**: backend coalesces PTY chunks in `ssh/mod.rs` (~8ms batches / 64KB cap) before emitting `ssh-data-${sessionId}` events to minimize IPC overhead.
 - **New DB tables**: add the `CREATE TABLE IF NOT EXISTS` to `init_tables()` in `db/mod.rs`, add the row struct to `models.rs`, add CRUD methods to `Database`. If the table should be portable, also wire it into `BackupBundle`/`export_backup_bundle`/`import_backup_bundle`.
 - **Terminal visibility**: never hide the terminal container with `display: none`. Use `visibility: hidden` + `pointerEvents: none` (see `App.tsx`, `XtermView.tsx`) — `display: none` collapses the container to 0×0, which makes `ResizeObserver`/`FitAddon` compute a bogus tiny size and corrupts remote curses apps (htop, vim) via a bad SIGWINCH. Any resize call must guard against near-zero `cols`/`rows` (frontend guards in `XtermView.tsx`, backend guard in `ssh/mod.rs`'s resize handler).
 - **Styling**: Tailwind v4 utility classes with CSS variables defined in `src/index.css` (`--canvas`, `--surface-*`, `--primary`, `--text-*`, etc. — the "Terminal Obsidian" palette). Reuse these variables; don't hardcode hex colors in components.
 - **Fonts**: Inter for UI text, JetBrains Mono/Fira Code for anything monospace (IPs, ports, commands, code). Loaded via Google Fonts in `index.html`.
 - Window is frameless (`decorations: false`); the custom titlebar/window controls live in `src/components/layout/Header.tsx` — don't reintroduce native window chrome.
+- **Version Bump Checklist**: when bumping the app version, update all 4 files simultaneously:
+  1. `package.json` (`version`)
+  2. `src-tauri/tauri.conf.json` (`version`)
+  3. `src-tauri/Cargo.toml` (`version`)
+  4. `src/stores/useUpdateStore.ts` (`currentVersion`)
+  Then run `cargo check` in `src-tauri` so `src-tauri/Cargo.lock` reflects the new package version.
 
 ## Verification
 

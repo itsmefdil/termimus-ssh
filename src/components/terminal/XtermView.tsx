@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { listen } from "@tauri-apps/api/event";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   Copy,
   Clipboard,
@@ -61,7 +62,11 @@ async function handleCopyFromTerminal(
   const selection = term.getSelection();
   if (selection) {
     try {
-      await navigator.clipboard.writeText(selection);
+      try {
+        await writeText(selection);
+      } catch {
+        await navigator.clipboard.writeText(selection);
+      }
       const count = selection.length;
       onNotify?.(count > 1 ? `Copied to clipboard (${count} chars)` : "Copied to clipboard");
     } catch (err) {
@@ -76,7 +81,12 @@ let lastPastedContent = "";
 
 async function safePasteToTerminal(term: Terminal) {
   try {
-    const text = await navigator.clipboard.readText();
+    let text = "";
+    try {
+      text = await readText();
+    } catch {
+      text = await navigator.clipboard.readText();
+    }
     if (!text) return;
 
     const now = Date.now();
@@ -434,20 +444,24 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       term.loadAddon(fitAddon);
       term.open(domWrapper);
 
-      // Capture-phase paste deduplication to prevent browser events from doubling shortcuts
+      // Capture-phase paste handler to ensure DOM paste events are forwarded to xterm
       domWrapper.addEventListener(
         "paste",
         (e: ClipboardEvent) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+
           const text = e.clipboardData?.getData("text/plain");
           if (text) {
             const now = Date.now();
             if (now - lastPasteTimestamp < 350 && lastPastedContent === text) {
-              e.preventDefault();
-              e.stopImmediatePropagation();
               return;
             }
             lastPasteTimestamp = now;
             lastPastedContent = text;
+            term.paste(text);
+          } else {
+            safePasteToTerminal(term);
           }
         },
         true
