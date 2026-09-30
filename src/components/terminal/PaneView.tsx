@@ -165,14 +165,22 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                       setPaneTab(pane.id, tab.id);
                       focusPane(pane.id);
                     }}
-                    onPointerDown={(e) => handlePointerDownTab(e, tab.id)}
-                    title="Drag to split screen or dock"
-                    className={`group flex h-5 max-w-[150px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded px-2 text-[11px] font-mono transition-colors ${
+                    onPointerDown={(e) => {
+                      if (e.button === 1) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeSession(tab.id);
+                        return;
+                      }
+                      handlePointerDownTab(e, tab.id);
+                    }}
+                    title="Drag to split screen or dock. Middle-click or ✕ to close."
+                    className={`group relative flex h-6 max-w-[160px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded-md px-2 text-[11px] font-mono transition-all select-none ${
                       isActiveInPane
                         ? isFocused
-                          ? "bg-[var(--surface-high)] text-[var(--primary)] font-medium"
-                          : "bg-[var(--surface-container)] text-[var(--text-primary)] font-medium"
-                        : "text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                          ? "bg-[var(--surface-high)] text-[var(--text-primary)] border border-[var(--primary)]/40 shadow-xs font-medium"
+                          : "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] font-medium"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface-container)]/60 hover:text-[var(--text-primary)] border border-transparent"
                     }`}
                   >
                     {tab.connecting ? (
@@ -180,20 +188,25 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                     ) : (
                       <span
                         className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                          tab.connected ? "bg-[var(--primary)]" : "bg-[var(--danger)]"
+                          tab.connected ? "bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.5)]" : "bg-rose-500 shadow-[0_0_4px_rgba(244,63,94,0.5)]"
                         }`}
                       />
                     )}
-                    <span className="truncate">{tab.hostLabel}</span>
+                    <span className="truncate flex-1 min-w-0">{tab.hostLabel}</span>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         closeSession(tab.id);
                       }}
                       title="Close tab"
-                      className="ml-auto rounded p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-white hover:bg-[var(--danger)]/80 transition-all"
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all cursor-pointer ${
+                        isActiveInPane
+                          ? "opacity-60 hover:opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
+                          : "opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
+                      }`}
                     >
-                      <X size={10} />
+                      <X size={10} strokeWidth={2.2} />
                     </button>
                   </div>
                 );

@@ -528,7 +528,16 @@ export function Header({
                   setActiveGroup(group.id);
                   onSelectTab?.();
                 }}
-                onPointerDown={(e) => handlePointerDownTab(e, primaryTab.id)}
+                onPointerDown={(e) => {
+                  if (e.button === 1) {
+                    // Middle-click (wheel click) closes the tab group
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeGroup(group.id);
+                    return;
+                  }
+                  handlePointerDownTab(e, primaryTab.id);
+                }}
                 onPointerEnter={() => {
                   if (isDraggingTab && draggedTabId) {
                     const sourceGroup = groups.find((g) =>
@@ -541,42 +550,54 @@ export function Header({
                 }}
                 title={
                   count > 1
-                    ? `${displayLabel} — ${count} terminals in split screen. Drag to split or reorder.`
-                    : "Drag to split screen or reorder"
+                    ? `${displayLabel} — ${count} terminals in split screen. Middle-click or ✕ to close.`
+                    : "Drag to reorder/split. Middle-click or ✕ to close."
                 }
-                className={`group flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-mono min-w-[120px] max-w-[210px] cursor-grab active:cursor-grabbing transition-colors ${
+                className={`group relative flex h-7.5 items-center gap-2 rounded-lg px-2.5 text-xs font-mono min-w-[130px] max-w-[220px] cursor-grab active:cursor-grabbing transition-all select-none ${
                   isActive
-                    ? "bg-[var(--surface-high)] text-[var(--primary)] font-medium"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                    ? "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] shadow-xs font-medium"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/60 border border-transparent hover:border-[var(--border)]/40"
                 }`}
               >
+                {/* Connection Status Dot */}
                 {isConnecting ? (
                   <Loader2 size={11} className="animate-spin text-[var(--primary)] shrink-0" />
                 ) : (
                   <span
-                    className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                      isConnected ? "bg-[var(--primary)]" : "bg-[var(--danger)]"
+                    className={`h-2 w-2 rounded-full shrink-0 ${
+                      isConnected
+                        ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.4)]"
+                        : "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]"
                     }`}
                   />
                 )}
-                <span className="truncate">{displayLabel}</span>
+
+                <span className="truncate flex-1 min-w-0">{displayLabel}</span>
+
                 {broadcastGroupIds.includes(group.id) && (
-                  <span title="Input Broadcast Active (Interconnected)" className="flex items-center">
+                  <span title="Input Broadcast Active (Interconnected)" className="flex items-center shrink-0">
                     <Radio
                       size={11}
                       className="text-[var(--primary)] animate-pulse shrink-0"
                     />
                   </span>
                 )}
+
+                {/* Close Button: Always visible with soft opacity on active tab, appears on hover for inactive */}
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeGroup(group.id);
                   }}
-                  title="Close tab group"
-                  className="ml-auto rounded p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--text-primary)] transition-opacity"
+                  title="Close tab (or middle-click)"
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-all cursor-pointer ${
+                    isActive
+                      ? "opacity-60 hover:opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
+                      : "opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
+                  }`}
                 >
-                  <X size={11} />
+                  <X size={12} strokeWidth={2.2} />
                 </button>
               </div>
             );
