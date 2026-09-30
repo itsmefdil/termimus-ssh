@@ -12,6 +12,7 @@ export interface Host {
   tags: string[];
   last_connected_at?: string | null;
   os_icon?: string | null;
+  jump_host_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,7 @@ export interface HostInput {
   passphrase?: string;
   tags: string[];
   os_icon?: string | null;
+  jump_host_id?: string | null;
 }
 
 export interface KeychainItem {

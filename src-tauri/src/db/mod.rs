@@ -126,6 +126,8 @@ impl Database {
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN last_connected_at TEXT", []);
         // v0.4.8+: auto-detected OS icon per host
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN os_icon TEXT", []);
+        // v0.5.0: bastion / jump host proxyjump
+        let _ = conn.execute("ALTER TABLE hosts ADD COLUMN jump_host_id TEXT", []);
 
         Ok(())
     }
@@ -190,7 +192,7 @@ impl Database {
     pub fn list_hosts(&self) -> Result<Vec<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at FROM hosts ORDER BY label ASC"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, jump_host_id, created_at, updated_at FROM hosts ORDER BY label ASC"
         )?;
 
         let hosts = stmt.query_map([], |row| {
@@ -208,8 +210,9 @@ impl Database {
                 tags,
                 last_connected_at: row.get(9)?,
                 os_icon: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
+                jump_host_id: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -219,7 +222,7 @@ impl Database {
     pub fn get_host(&self, id: &str) -> Result<Option<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at FROM hosts WHERE id = ?1"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, jump_host_id, created_at, updated_at FROM hosts WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query(params![id])?;
@@ -238,8 +241,9 @@ impl Database {
                 tags,
                 last_connected_at: row.get(9)?,
                 os_icon: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
+                jump_host_id: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
             }))
         } else {
             Ok(None)
@@ -251,8 +255,8 @@ impl Database {
         let tags_str = serde_json::to_string(&host.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
-            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, jump_host_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                 folder_id=excluded.folder_id,
                 label=excluded.label,
@@ -263,6 +267,7 @@ impl Database {
                 credential_id=excluded.credential_id,
                 tags=excluded.tags,
                 os_icon=COALESCE(excluded.os_icon, hosts.os_icon),
+                jump_host_id=excluded.jump_host_id,
                 updated_at=excluded.updated_at",
             params![
                 host.id,
@@ -276,6 +281,7 @@ impl Database {
                 tags_str,
                 host.last_connected_at,
                 host.os_icon,
+                host.jump_host_id,
                 host.created_at,
                 host.updated_at,
             ],

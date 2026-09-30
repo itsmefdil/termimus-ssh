@@ -84,10 +84,18 @@ export const HostListRow = memo(function HostListRow({
       </div>
 
       {/* 2. Column: Host Label / Name */}
-      <div className="w-48 sm:w-56 md:w-64 shrink-0 min-w-0">
-        <span className="block truncate text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
+      <div className="w-48 sm:w-56 md:w-64 shrink-0 min-w-0 flex items-center gap-1.5">
+        <span className="truncate text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
           {host.label}
         </span>
+        {host.jump_host_id && (
+          <span
+            className="shrink-0 px-1 py-0.2 rounded text-[9px] font-mono font-medium bg-[var(--surface-high)] text-[var(--text-muted)] border border-[var(--border)]"
+            title="Connected via SSH Bastion / Jump Host"
+          >
+            jump
+          </span>
+        )}
       </div>
 
       {/* 3. Column: Address (IP & Port) */}

@@ -15,13 +15,14 @@ import { useHostStore } from "../../stores/useHostStore";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { api, HostInput } from "../../lib/api";
 import { DistroBadge, DISTRO_OPTIONS } from "./DistroBadge";
+import { CustomSelect } from "../ui/CustomSelect";
 
 interface HostModalProps {
   onOpenKeychain?: () => void;
 }
 
 export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
-  const { isHostModalOpen, editingHost, templateHost, defaultFolderId, closeHostModal, saveHost, folders } =
+  const { isHostModalOpen, editingHost, templateHost, defaultFolderId, closeHostModal, saveHost, folders, hosts } =
     useHostStore();
   const { items: keychainItems } = useKeychainStore();
 
@@ -34,6 +35,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
   const [tagInput, setTagInput] = useState("");
   const [folderId, setFolderId] = useState<string>("");
   const [osIcon, setOsIcon] = useState<string>("");
+  const [jumpHostId, setJumpHostId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +74,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setTagInput(editingHost.tags.join(", "));
       setFolderId(editingHost.folder_id ?? "");
       setOsIcon(editingHost.os_icon ?? "");
+      setJumpHostId(editingHost.jump_host_id ?? "");
 
       const isKeychain = keychainItems.some(
         (i) => i.id === editingHost.credential_id
@@ -106,6 +109,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setTagInput(templateHost.tags.join(", "));
       setFolderId(templateHost.folder_id ?? defaultFolderId ?? "");
       setOsIcon(templateHost.os_icon ?? "");
+      setJumpHostId(templateHost.jump_host_id ?? "");
 
       // If source host used a reusable Keychain item, preserve that link.
       // If it used an anonymous inline credential, clear it so user supplies new secret.
@@ -126,6 +130,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setTagInput("");
       setFolderId(defaultFolderId ?? "");
       setOsIcon("");
+      setJumpHostId("");
     }
     setError(null);
   }, [editingHost, templateHost, defaultFolderId, isHostModalOpen]);
@@ -245,6 +250,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
         tags,
         folder_id: folderId || null,
         os_icon: osIcon || null,
+        jump_host_id: jumpHostId || null,
       };
 
       await saveHost(input, editingHost?.id);
@@ -308,18 +314,14 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                 <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
                   Group / Folder
                 </label>
-                <select
+                <CustomSelect
                   value={folderId}
-                  onChange={(e) => setFolderId(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-                >
-                  <option value="">No group (Ungrouped)</option>
-                  {folders.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFolderId}
+                  options={[
+                    { value: "", label: "No group (Ungrouped)" },
+                    ...folders.map((f) => ({ value: f.id, label: f.name })),
+                  ]}
+                />
               </div>
 
               <div className="grid grid-cols-4 gap-3">
@@ -374,6 +376,31 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                   placeholder="vps, homelab, docker, production"
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none transition-colors"
                 />
+              </div>
+
+              {/* JUMP HOST / BASTION CONFIGURATION */}
+              <div>
+                <label className="mb-1.5 flex items-center justify-between font-medium text-[var(--text-muted)]">
+                  <span>Connect via Jump Host / Bastion</span>
+                  <span className="text-[10px] text-[var(--text-muted)] font-mono">SSH ProxyJump</span>
+                </label>
+                <CustomSelect
+                  value={jumpHostId}
+                  onChange={setJumpHostId}
+                  options={[
+                    { value: "", label: "Direct Connection (No Jump Host)" },
+                    ...hosts
+                      .filter((h) => h.id !== editingHost?.id)
+                      .map((h) => ({
+                        value: h.id,
+                        label: h.label,
+                        description: `(${h.username}@${h.address}:${h.port})`,
+                      })),
+                  ]}
+                />
+                <p className="mt-1 text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  Traffic to this host will be securely tunneled through the selected Bastion server.
+                </p>
               </div>
             </div>
 
@@ -433,18 +460,18 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                           Reusable credentials
                         </span>
                       </label>
-                      <select
+                      <CustomSelect
                         value={selectedCredentialId}
-                        onChange={(e) => handleSelectCredential(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-                      >
-                        <option value="">-- Custom one-off password --</option>
-                        {availableIdentities.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name} {item.username ? `(${item.username})` : ""}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={handleSelectCredential}
+                        options={[
+                          { value: "", label: "-- Custom one-off password --" },
+                          ...availableIdentities.map((item) => ({
+                            value: item.id,
+                            label: item.name,
+                            description: item.username ? `(${item.username})` : undefined,
+                          })),
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -491,22 +518,23 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                         Select from Keychain
                       </span>
                     </label>
-                    <select
+                    <CustomSelect
                       value={selectedCredentialId}
-                      onChange={(e) => handleSelectCredential(e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-                    >
-                      <option value="">
-                        {availableKeys.length > 0
-                          ? "-- Select an SSH key from Keychain --"
-                          : "-- No SSH keys in Keychain --"}
-                      </option>
-                      {availableKeys.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} ({item.key_type || "KEY"})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={handleSelectCredential}
+                      options={[
+                        {
+                          value: "",
+                          label: availableKeys.length > 0
+                            ? "-- Select an SSH key from Keychain --"
+                            : "-- No SSH keys in Keychain --",
+                        },
+                        ...availableKeys.map((item) => ({
+                          value: item.id,
+                          label: item.name,
+                          description: `(${item.key_type || "KEY"})`,
+                        })),
+                      ]}
+                    />
                   </div>
 
                   {/* If a Keychain key is selected: show preview & copy pubkey button */}
@@ -619,17 +647,14 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                 <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
                   OS / Distro Icon
                 </label>
-                <select
+                <CustomSelect
                   value={osIcon}
-                  onChange={(e) => setOsIcon(e.target.value)}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-                >
-                  {DISTRO_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setOsIcon}
+                  options={DISTRO_OPTIONS.map((opt) => ({
+                    value: opt.id,
+                    label: opt.label,
+                  }))}
+                />
                 <p className="mt-1 text-[11px] text-[var(--text-muted)] leading-relaxed">
                   Leave on <span className="font-mono">Auto-detect</span> — the icon will be set automatically the first time you SSH into this host.
                 </p>

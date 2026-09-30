@@ -382,6 +382,7 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
     } else {
         existing.as_ref().and_then(|h| h.os_icon.clone())
     };
+    let jump_host_id = input.jump_host_id;
 
     let host = Host {
         id,
@@ -395,6 +396,7 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
         tags: input.tags,
         last_connected_at,
         os_icon,
+        jump_host_id,
         created_at,
         updated_at: now,
     };
@@ -507,6 +509,23 @@ pub async fn ssh_connect(
 
     let auth = resolve_host_auth(&state, &host)?;
 
+    let jump_host = if let Some(ref jid) = host.jump_host_id {
+        let jump = state
+            .db
+            .get_host(jid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Jump Host / Bastion server not found".to_string())?;
+        let jump_auth = resolve_host_auth(&state, &jump)?;
+        Some(crate::ssh::JumpHostConfig {
+            address: jump.address,
+            port: jump.port,
+            username: jump.username,
+            auth: jump_auth,
+        })
+    } else {
+        None
+    };
+
     let result = state
         .ssh
         .connect(
@@ -520,6 +539,7 @@ pub async fn ssh_connect(
             auth,
             cols,
             rows,
+            jump_host,
         )
         .await;
 

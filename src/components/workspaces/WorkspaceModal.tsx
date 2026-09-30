@@ -16,6 +16,7 @@ import {
 } from "../../stores/useWorkspaceStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { LayoutBlueprint } from "./WorkspaceCard";
+import { CustomSelect } from "../ui/CustomSelect";
 
 const LAYOUT_OPTIONS: {
   id: PresetLayoutType;
@@ -262,21 +263,19 @@ export function WorkspaceModal() {
                     <label className="text-[11px] font-mono text-[var(--text-muted)] flex items-center justify-between">
                       <span>Pane {idx + 1} Target:</span>
                     </label>
-                    <select
+                    <CustomSelect
                       value={selectedHostIds[idx] || ""}
-                      onChange={(e) => handleSelectHostForPane(idx, e.target.value)}
-                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-xs text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-                    >
-                      {hosts.length === 0 ? (
-                        <option value="">No hosts available — add a host first</option>
-                      ) : (
-                        hosts.map((h) => (
-                          <option key={h.id} value={h.id}>
-                            {h.label} ({h.username}@{h.address}:{h.port})
-                          </option>
-                        ))
-                      )}
-                    </select>
+                      onChange={(val) => handleSelectHostForPane(idx, val)}
+                      placeholder={hosts.length === 0 ? "No hosts available" : "Select target host..."}
+                      options={[
+                        { value: "", label: "-- None / Empty Pane --" },
+                        ...hosts.map((h) => ({
+                          value: h.id,
+                          label: h.label,
+                          description: `(${h.username}@${h.address}:${h.port})`,
+                        })),
+                      ]}
+                    />
                   </div>
                 ))}
               </div>

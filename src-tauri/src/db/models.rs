@@ -52,6 +52,10 @@ pub struct Host {
     /// `None` means not yet detected (host never connected).
     #[serde(default)]
     pub os_icon: Option<String>,
+    /// Optional bastion/jump host ID used as an SSH ProxyJump tunnel
+    /// before connecting to this host.
+    #[serde(default)]
+    pub jump_host_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -73,6 +77,8 @@ pub struct HostInput {
     pub tags: Vec<String>,
     #[serde(default)]
     pub os_icon: Option<String>,
+    #[serde(default)]
+    pub jump_host_id: Option<String>,
 }
 
 /// A Keychain entry: a named, reusable credential (SSH private key or

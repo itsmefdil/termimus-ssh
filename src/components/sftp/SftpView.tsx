@@ -12,6 +12,7 @@ import { useHostStore } from "../../stores/useHostStore";
 import { FilePane } from "./FilePane";
 import { FileEditorModal } from "./FileEditorModal";
 import { FileEntry } from "../../lib/api";
+import { CustomSelect } from "../ui/CustomSelect";
 
 export function SftpView() {
   const { hosts } = useHostStore();
@@ -62,22 +63,25 @@ export function SftpView() {
               Remote Server:
             </span>
           </div>
-          <select
-            value={remoteHost?.id ?? ""}
-            onChange={(e) => {
-              const host = hosts.find((h) => h.id === e.target.value);
-              if (host) connectRemote(host);
-            }}
-            disabled={remoteLoading || transferring}
-            className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <option value="">Select a host to connect...</option>
-            {hosts.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.label} ({h.username}@{h.address})
-              </option>
-            ))}
-          </select>
+          <div className="w-64 sm:w-80">
+            <CustomSelect
+              value={remoteHost?.id ?? ""}
+              onChange={(val) => {
+                const host = hosts.find((h) => h.id === val);
+                if (host) connectRemote(host);
+              }}
+              disabled={remoteLoading || transferring}
+              placeholder="Select a host to connect..."
+              options={[
+                { value: "", label: "Select a host to connect..." },
+                ...hosts.map((h) => ({
+                  value: h.id,
+                  label: h.label,
+                  description: `(${h.username}@${h.address})`,
+                })),
+              ]}
+            />
+          </div>
 
           {remoteSessionId && (
             <button

@@ -33,6 +33,7 @@ import {
   AutoLockPolicy,
   AUTO_LOCK_LABELS,
 } from "../../stores/useSettingsStore";
+import { CustomSelect } from "../ui/CustomSelect";
 import { api } from "../../lib/api";
 import { openExternalUrl } from "../../lib/openUrl";
 import kofiIcon from "../../assets/kofi.png";
@@ -315,17 +316,16 @@ function SecurityVaultTab() {
               </p>
             </div>
 
-            <select
-              value={autoLockPolicy}
-              onChange={(e) => setAutoLockPolicy(e.target.value as AutoLockPolicy)}
-              className="rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer shrink-0"
-            >
-              {(Object.keys(AUTO_LOCK_LABELS) as AutoLockPolicy[]).map((key) => (
-                <option key={key} value={key}>
-                  {AUTO_LOCK_LABELS[key]}
-                </option>
-              ))}
-            </select>
+            <div className="w-56 shrink-0">
+              <CustomSelect
+                value={autoLockPolicy}
+                onChange={(val) => setAutoLockPolicy(val as AutoLockPolicy)}
+                options={(Object.keys(AUTO_LOCK_LABELS) as AutoLockPolicy[]).map((key) => ({
+                  value: key,
+                  label: AUTO_LOCK_LABELS[key],
+                }))}
+              />
+            </div>
           </div>
 
           {/* C. Master Password Rotation & Danger Zone */}

@@ -3,6 +3,7 @@ import { X, ArrowLeftRight } from "lucide-react";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { PortForwardInput } from "../../lib/api";
+import { CustomSelect } from "../ui/CustomSelect";
 
 export function TunnelModal() {
   const { isModalOpen, editingRule, closeModal, saveRule } = useTunnelStore();
@@ -118,18 +119,19 @@ export function TunnelModal() {
             <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
               SSH Host *
             </label>
-            <select
+            <CustomSelect
               value={hostId}
-              onChange={(e) => setHostId(e.target.value)}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
-            >
-              <option value="">Select SSH server...</option>
-              {hosts.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.label} ({h.username}@{h.address}:{h.port})
-                </option>
-              ))}
-            </select>
+              onChange={setHostId}
+              placeholder="Select SSH server..."
+              options={[
+                { value: "", label: "Select SSH server..." },
+                ...hosts.map((h) => ({
+                  value: h.id,
+                  label: h.label,
+                  description: `(${h.username}@${h.address}:${h.port})`,
+                })),
+              ]}
+            />
           </div>
 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">

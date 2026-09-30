@@ -1043,9 +1043,19 @@ const HostCard = memo(function HostCard({
 
         {/* Host Label & Username */}
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
-            {host.label}
-          </h3>
+          <div className="flex items-center gap-1.5">
+            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
+              {host.label}
+            </h3>
+            {host.jump_host_id && (
+              <span
+                className="shrink-0 px-1.5 py-0.2 rounded text-[9px] font-mono font-medium bg-[var(--surface-high)] text-[var(--text-muted)] border border-[var(--border)]"
+                title="Connected via SSH Bastion / Jump Host"
+              >
+                via jump
+              </span>
+            )}
+          </div>
           <p className="truncate text-xs text-[var(--text-muted)] font-mono mt-0.5">
             ssh, {host.username}
           </p>

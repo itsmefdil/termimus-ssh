@@ -83,6 +83,65 @@ pub enum SshAuth {
     PrivateKey { pem: String, passphrase: Option<String> },
 }
 
+#[derive(Clone)]
+pub struct JumpHostConfig {
+    pub address: String,
+    pub port: u16,
+    pub username: String,
+    pub auth: SshAuth,
+}
+
+pub enum SshStream {
+    Direct(tokio::net::TcpStream),
+    Tunneled(russh::ChannelStream<russh::client::Msg>),
+}
+
+impl tokio::io::AsyncRead for SshStream {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            SshStream::Direct(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+            SshStream::Tunneled(s) => std::pin::Pin::new(s).poll_read(cx, buf),
+        }
+    }
+}
+
+impl tokio::io::AsyncWrite for SshStream {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        match self.get_mut() {
+            SshStream::Direct(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+            SshStream::Tunneled(s) => std::pin::Pin::new(s).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            SshStream::Direct(s) => std::pin::Pin::new(s).poll_flush(cx),
+            SshStream::Tunneled(s) => std::pin::Pin::new(s).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            SshStream::Direct(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+            SshStream::Tunneled(s) => std::pin::Pin::new(s).poll_shutdown(cx),
+        }
+    }
+}
+
 pub enum SessionCommand {
     Data(Vec<u8>),
     Resize { cols: u32, rows: u32 },
@@ -135,6 +194,7 @@ pub struct SshSession {
     pub id: String,
     handle: Handle<SshClientHandler>,
     cmd_tx: mpsc::UnboundedSender<SessionCommand>,
+    _jump_handle: Option<Handle<SshClientHandler>>,
 }
 
 pub struct SessionManager {
@@ -162,6 +222,7 @@ impl SessionManager {
         auth: SshAuth,
         cols: u16,
         rows: u16,
+        jump_host: Option<JumpHostConfig>,
     ) -> Result<(), String> {
         // Prevent duplicate concurrent connection attempts for the exact same session_id
         {
@@ -177,11 +238,14 @@ impl SessionManager {
             let mut sessions = self.sessions.write().await;
             if let Some(old_session) = sessions.remove(&session_id) {
                 let _ = old_session.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+                if let Some(ref jump) = old_session._jump_handle {
+                    let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+                }
             }
         }
 
         let res = self
-            .do_connect(app, db, session_id.clone(), host_id, address, port, username, auth, cols, rows)
+            .do_connect(app, db, session_id.clone(), host_id, address, port, username, auth, cols, rows, jump_host)
             .await;
 
         {
@@ -204,6 +268,7 @@ impl SessionManager {
         auth: SshAuth,
         cols: u16,
         rows: u16,
+        jump_host: Option<JumpHostConfig>,
     ) -> Result<(), String> {
         let progress_event = format!("ssh-progress-{session_id}");
         let emit_progress = |step: u8, step_name: &str, message: &str, is_error: bool| {
@@ -219,8 +284,111 @@ impl SessionManager {
             );
         };
 
-        emit_progress(1, "connecting", &format!("Resolving and connecting to {address}:{port}..."), false);
+        let has_jump = jump_host.is_some();
 
+        // ── 1. Establish Transport Stream (Direct TCP or via Jump Host ProxyJump) ──
+        let (socket, jump_handle) = if let Some(jump) = jump_host {
+            emit_progress(1, "connecting", &format!("Connecting to Bastion / Jump Host {}:{}...", jump.address, jump.port), false);
+
+            let jump_tcp = match tokio::net::TcpStream::connect((jump.address.as_str(), jump.port)).await {
+                Ok(s) => {
+                    let _ = s.set_nodelay(true);
+                    s
+                }
+                Err(e) => {
+                    let msg = format!("Failed to reach Jump Host {}:{}: {e}", jump.address, jump.port);
+                    emit_progress(1, "error", &msg, true);
+                    return Err(msg);
+                }
+            };
+
+            let jump_config = Arc::new(client::Config::default());
+            let jump_handler = SshClientHandler {
+                address: jump.address.clone(),
+                port: jump.port,
+                db: db.clone(),
+            };
+
+            let mut j_handle = match client::connect_stream(jump_config, jump_tcp, jump_handler).await {
+                Ok(h) => h,
+                Err(e) => {
+                    let msg = format!("Jump Host handshake failed: {e}");
+                    emit_progress(1, "error", &msg, true);
+                    return Err(msg);
+                }
+            };
+
+            emit_progress(1, "authenticating", &format!("Authenticating to Jump Host as {}...", jump.username), false);
+
+            let j_authenticated = match &jump.auth {
+                SshAuth::Password(password) => match j_handle.authenticate_password(&jump.username, password).await {
+                    Ok(r) => r.success(),
+                    Err(e) => {
+                        let msg = format!("Jump Host auth error: {e}");
+                        emit_progress(1, "error", &msg, true);
+                        return Err(msg);
+                    }
+                },
+                SshAuth::PrivateKey { pem, passphrase } => {
+                    let key_pair = match decode_secret_key(pem, passphrase.as_deref()) {
+                        Ok(k) => k,
+                        Err(e) => {
+                            let msg = format!("Invalid Jump Host private key: {e}");
+                            emit_progress(1, "error", &msg, true);
+                            return Err(msg);
+                        }
+                    };
+                    match authenticate_publickey_smart(&mut j_handle, &jump.username, key_pair).await {
+                        Ok(r) => r.success(),
+                        Err(msg) => {
+                            emit_progress(1, "error", &msg, true);
+                            return Err(msg);
+                        }
+                    }
+                }
+            };
+
+            if !j_authenticated {
+                let msg = "Jump Host authentication rejected by server".to_string();
+                emit_progress(1, "error", &msg, true);
+                return Err(msg);
+            }
+
+            emit_progress(1, "connecting", &format!("Tunneling via Jump Host to {address}:{port}..."), false);
+
+            let channel = match j_handle.channel_open_direct_tcpip(
+                address.clone(),
+                port as u32,
+                "127.0.0.1".to_string(),
+                0,
+            ).await {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = format!("Failed to open tunnel through Jump Host to {address}:{port}: {e}");
+                    emit_progress(1, "error", &msg, true);
+                    return Err(msg);
+                }
+            };
+
+            (SshStream::Tunneled(channel.into_stream()), Some(j_handle))
+        } else {
+            emit_progress(1, "connecting", &format!("Resolving and connecting to {address}:{port}..."), false);
+
+            let s = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
+                Ok(s) => {
+                    let _ = s.set_nodelay(true);
+                    s
+                }
+                Err(e) => {
+                    let msg = format!("Connection failed: {e}");
+                    emit_progress(1, "error", &msg, true);
+                    return Err(msg);
+                }
+            };
+            (SshStream::Direct(s), None)
+        };
+
+        // ── 2. Target SSH Handshake over the stream ──
         let config = Arc::new(client::Config::default());
         let handler = SshClientHandler {
             address: address.clone(),
@@ -228,31 +396,16 @@ impl SessionManager {
             db: db.clone(),
         };
 
-        // Explicitly connect the TCP stream and disable Nagle's algorithm (TCP_NODELAY).
-        // Standard russh::client::connect leaves Nagle enabled by default on Tokio TcpStream,
-        // which combined with Linux delayed ACK can introduce 40-200ms delay per typed keystroke.
-        let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
-            Ok(s) => {
-                let _ = s.set_nodelay(true);
-                s
-            }
-            Err(e) => {
-                let msg = format!("Connection failed: {e}");
-                emit_progress(1, "error", &msg, true);
-                return Err(msg);
-            }
-        };
-
         let mut handle = match client::connect_stream(config, socket, handler).await {
             Ok(h) => h,
             Err(e) => {
-                let msg = format!("Connection failed: {e}");
+                let msg = format!("Connection to target failed: {e}");
                 emit_progress(1, "error", &msg, true);
                 return Err(msg);
             }
         };
 
-        emit_progress(2, "host_key", "Verifying host key (Trust On First Use)...", false);
+        emit_progress(2, "host_key", "Verifying target host key (Trust On First Use)...", false);
 
         emit_progress(3, "authenticating", &format!("Authenticating as {username}..."), false);
 
@@ -324,6 +477,7 @@ impl SessionManager {
             id: session_id.clone(),
             handle,
             cmd_tx,
+            _jump_handle: jump_handle,
         });
 
         {
@@ -426,32 +580,35 @@ impl SessionManager {
         });
 
         // Spawn OS detection in the background via a separate exec channel.
-        // Only runs when host_id is provided (interactive SSH sessions).
+        // Only runs when host_id is provided and not proxied via a jump host
+        // (targets behind a bastion are on private subnets, unreachable directly).
         // Fires-and-forgets: any failure is silently ignored — it never
         // affects the primary PTY channel or the session itself.
         if let Some(hid) = host_id {
-            let app_for_os = app.clone();
-            let db_for_os = db.clone();
-            let addr_for_os = address.clone();
-            let port_for_os = port;
-            let user_for_os = username.clone();
-            let auth_for_os = auth.clone();
-            tokio::spawn(async move {
-                // Small delay so the interactive shell can fully initialise
-                // before we open a second channel (avoids race conditions on
-                // slower servers).
-                tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
-                detect_os_via_exec(
-                    &app_for_os,
-                    db_for_os,
-                    addr_for_os,
-                    port_for_os,
-                    user_for_os,
-                    auth_for_os,
-                    hid,
-                )
-                .await;
-            });
+            if !has_jump {
+                let app_for_os = app.clone();
+                let db_for_os = db.clone();
+                let addr_for_os = address.clone();
+                let port_for_os = port;
+                let user_for_os = username.clone();
+                let auth_for_os = auth.clone();
+                tokio::spawn(async move {
+                    // Small delay so the interactive shell can fully initialise
+                    // before we open a second channel (avoids race conditions on
+                    // slower servers).
+                    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                    detect_os_via_exec(
+                        &app_for_os,
+                        db_for_os,
+                        addr_for_os,
+                        port_for_os,
+                        user_for_os,
+                        auth_for_os,
+                        hid,
+                    )
+                    .await;
+                });
+            }
         }
 
         Ok(())
@@ -654,5 +811,17 @@ pub async fn detect_os_via_exec(
                 serde_json::json!({ "host_id": host_id, "os_icon": slug }),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{AsyncRead, AsyncWrite};
+
+    fn _assert_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>() {}
+
+    #[test]
+    fn test_channel_into_stream_trait() {
+        _assert_stream::<russh::ChannelStream<russh::client::Msg>>();
     }
 }
