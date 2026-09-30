@@ -9,17 +9,19 @@ import {
   UserCheck,
   Eye,
   EyeOff,
+  Cpu,
 } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { api, HostInput } from "../../lib/api";
+import { DistroBadge, DISTRO_OPTIONS } from "./DistroBadge";
 
 interface HostModalProps {
   onOpenKeychain?: () => void;
 }
 
 export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
-  const { isHostModalOpen, editingHost, closeHostModal, saveHost, folders } =
+  const { isHostModalOpen, editingHost, defaultFolderId, closeHostModal, saveHost, folders } =
     useHostStore();
   const { items: keychainItems } = useKeychainStore();
 
@@ -31,6 +33,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
   const [secret, setSecret] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [folderId, setFolderId] = useState<string>("");
+  const [osIcon, setOsIcon] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +70,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setAuthMethod(isPrivateKey ? "private_key" : "password");
       setTagInput(editingHost.tags.join(", "));
       setFolderId(editingHost.folder_id ?? "");
+      setOsIcon(editingHost.os_icon ?? "");
 
       const isKeychain = keychainItems.some(
         (i) => i.id === editingHost.credential_id
@@ -99,10 +103,11 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setSelectedCredentialId("");
       setSecret("");
       setTagInput("");
-      setFolderId("");
+      setFolderId(defaultFolderId ?? "");
+      setOsIcon("");
     }
     setError(null);
-  }, [editingHost, isHostModalOpen]);
+  }, [editingHost, defaultFolderId, isHostModalOpen]);
 
   // When a keychain item is selected, update default username if not set
   function handleSelectCredential(id: string) {
@@ -218,6 +223,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
         passphrase: undefined,
         tags,
         folder_id: folderId || null,
+        os_icon: osIcon || null,
       };
 
       await saveHost(input, editingHost?.id);
@@ -567,6 +573,46 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* OS ICON OVERRIDE */}
+          <div className="border-t border-[var(--border)] pt-4">
+            <div className="flex items-start gap-4">
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                {/* Live preview of current selection */}
+                {osIcon ? (
+                  <DistroBadge
+                    host={{ os_icon: osIcon } as any}
+                    size="lg"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-muted)]">
+                    <Cpu size={18} />
+                  </div>
+                )}
+                <span className="text-[10px] text-[var(--text-muted)] font-mono">preview</span>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
+                  OS / Distro Icon
+                </label>
+                <select
+                  value={osIcon}
+                  onChange={(e) => setOsIcon(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors cursor-pointer"
+                >
+                  {DISTRO_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)] leading-relaxed">
+                  Leave on <span className="font-mono">Auto-detect</span> — the icon will be set automatically the first time you SSH into this host.
+                </p>
+              </div>
             </div>
           </div>
 

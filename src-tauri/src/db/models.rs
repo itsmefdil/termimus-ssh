@@ -46,6 +46,12 @@ pub struct Host {
     pub credential_id: Option<String>,
     pub tags: Vec<String>,
     pub last_connected_at: Option<String>,
+    /// OS/distro detected automatically after first SSH login,
+    /// e.g. "ubuntu", "debian", "alpine", "arch", "fedora", "centos",
+    /// "rocky", "kali", "manjaro", "opensuse", "generic".
+    /// `None` means not yet detected (host never connected).
+    #[serde(default)]
+    pub os_icon: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -65,6 +71,8 @@ pub struct HostInput {
     pub secret: Option<String>,
     pub passphrase: Option<String>,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub os_icon: Option<String>,
 }
 
 /// A Keychain entry: a named, reusable credential (SSH private key or

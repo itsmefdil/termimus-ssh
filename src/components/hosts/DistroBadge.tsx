@@ -1,78 +1,312 @@
-import { Server } from "lucide-react";
+import {
+  siUbuntu,
+  siDebian,
+  siAlpinelinux,
+  siArchlinux,
+  siManjaro,
+  siFedora,
+  siCentos,
+  siRedhat,
+  siRockylinux,
+  siAlmalinux,
+  siOpensuse,
+  siKalilinux,
+  siLinuxmint,
+  siPopos,
+  siElementary,
+  siNixos,
+  siGentoo,
+  siVoidlinux,
+  siSlackware,
+  siRaspberrypi,
+  siEndeavouros,
+  siLinux,
+  type SimpleIcon,
+} from "simple-icons";
 import { Host } from "../../lib/api";
 
-export type DistroType = "debian" | "ubuntu" | "alpine" | "redhat" | "arch" | "generic";
+// ══════════════════════════════════════════════════════════════════════════════
+// Distro Types & Metadata powered by official Simple Icons
+// ══════════════════════════════════════════════════════════════════════════════
 
-export function detectDistro(host: Host): { type: DistroType; label: string; badgeBg: string } {
-  const tagsStr = (host.tags || []).join(" ").toLowerCase();
-  const labelLower = (host.label || "").toLowerCase();
-  const userLower = (host.username || "").toLowerCase();
-  const combined = `${labelLower} ${tagsStr} ${userLower}`;
+export type DistroType =
+  | "ubuntu"
+  | "debian"
+  | "alpine"
+  | "arch"
+  | "manjaro"
+  | "endeavour"
+  | "fedora"
+  | "centos"
+  | "rhel"
+  | "rocky"
+  | "almalinux"
+  | "opensuse"
+  | "kali"
+  | "mint"
+  | "popos"
+  | "elementary"
+  | "nixos"
+  | "gentoo"
+  | "void"
+  | "slackware"
+  | "raspbian"
+  | "amazon"
+  | "linux"
+  | "generic";
 
-  if (combined.includes("ubuntu")) {
-    return { type: "ubuntu", label: "Ubuntu", badgeBg: "bg-[#e95420]" };
-  }
-  if (combined.includes("debian") || combined.includes("deb") || labelLower.includes("kaleyo")) {
-    return { type: "debian", label: "Debian", badgeBg: "bg-[#d70a53]" };
-  }
-  if (combined.includes("alpine")) {
-    return { type: "alpine", label: "Alpine", badgeBg: "bg-[#0d597f]" };
-  }
-  if (combined.includes("arch")) {
-    return { type: "arch", label: "Arch Linux", badgeBg: "bg-[#1793d1]" };
-  }
-  if (
-    combined.includes("centos") ||
-    combined.includes("rhel") ||
-    combined.includes("redhat") ||
-    combined.includes("rocky") ||
-    combined.includes("fedora")
-  ) {
-    return { type: "redhat", label: "RedHat", badgeBg: "bg-[#ee0000]" };
-  }
-
-  return { type: "generic", label: "Linux", badgeBg: "bg-[#2563eb]" };
+interface DistroMeta {
+  type: DistroType;
+  label: string;
+  icon: SimpleIcon;
+  bgColor: string;
 }
+
+const DISTRO_MAP: Record<DistroType, DistroMeta> = {
+  ubuntu: {
+    type: "ubuntu",
+    label: siUbuntu.title,
+    icon: siUbuntu,
+    bgColor: `#${siUbuntu.hex}`,
+  },
+  debian: {
+    type: "debian",
+    label: siDebian.title,
+    icon: siDebian,
+    bgColor: `#${siDebian.hex}`,
+  },
+  alpine: {
+    type: "alpine",
+    label: siAlpinelinux.title,
+    icon: siAlpinelinux,
+    bgColor: `#${siAlpinelinux.hex}`,
+  },
+  arch: {
+    type: "arch",
+    label: siArchlinux.title,
+    icon: siArchlinux,
+    bgColor: `#${siArchlinux.hex}`,
+  },
+  manjaro: {
+    type: "manjaro",
+    label: siManjaro.title,
+    icon: siManjaro,
+    bgColor: `#${siManjaro.hex}`,
+  },
+  endeavour: {
+    type: "endeavour",
+    label: siEndeavouros.title,
+    icon: siEndeavouros,
+    bgColor: `#${siEndeavouros.hex}`,
+  },
+  fedora: {
+    type: "fedora",
+    label: siFedora.title,
+    icon: siFedora,
+    bgColor: `#${siFedora.hex}`,
+  },
+  centos: {
+    type: "centos",
+    label: siCentos.title,
+    icon: siCentos,
+    bgColor: `#${siCentos.hex}`,
+  },
+  rhel: {
+    type: "rhel",
+    label: siRedhat.title,
+    icon: siRedhat,
+    bgColor: `#${siRedhat.hex}`,
+  },
+  rocky: {
+    type: "rocky",
+    label: siRockylinux.title,
+    icon: siRockylinux,
+    bgColor: `#${siRockylinux.hex}`,
+  },
+  almalinux: {
+    type: "almalinux",
+    label: siAlmalinux.title,
+    icon: siAlmalinux,
+    bgColor: `#${siAlmalinux.hex}`,
+  },
+  opensuse: {
+    type: "opensuse",
+    label: siOpensuse.title,
+    icon: siOpensuse,
+    bgColor: `#${siOpensuse.hex}`,
+  },
+  kali: {
+    type: "kali",
+    label: siKalilinux.title,
+    icon: siKalilinux,
+    bgColor: `#${siKalilinux.hex}`,
+  },
+  mint: {
+    type: "mint",
+    label: siLinuxmint.title,
+    icon: siLinuxmint,
+    bgColor: `#${siLinuxmint.hex}`,
+  },
+  popos: {
+    type: "popos",
+    label: siPopos.title,
+    icon: siPopos,
+    bgColor: `#${siPopos.hex}`,
+  },
+  elementary: {
+    type: "elementary",
+    label: siElementary.title,
+    icon: siElementary,
+    bgColor: `#${siElementary.hex}`,
+  },
+  nixos: {
+    type: "nixos",
+    label: siNixos.title,
+    icon: siNixos,
+    bgColor: `#${siNixos.hex}`,
+  },
+  gentoo: {
+    type: "gentoo",
+    label: siGentoo.title,
+    icon: siGentoo,
+    bgColor: `#${siGentoo.hex}`,
+  },
+  void: {
+    type: "void",
+    label: siVoidlinux.title,
+    icon: siVoidlinux,
+    bgColor: `#${siVoidlinux.hex}`,
+  },
+  slackware: {
+    type: "slackware",
+    label: siSlackware.title,
+    icon: siSlackware,
+    bgColor: `#${siSlackware.hex}`,
+  },
+  raspbian: {
+    type: "raspbian",
+    label: siRaspberrypi.title,
+    icon: siRaspberrypi,
+    bgColor: `#${siRaspberrypi.hex}`,
+  },
+  amazon: {
+    type: "amazon",
+    label: "Amazon Linux",
+    icon: siLinux,
+    bgColor: "#FF9900",
+  },
+  linux: {
+    type: "linux",
+    label: "Linux",
+    icon: siLinux,
+    bgColor: "#2563eb",
+  },
+  generic: {
+    type: "generic",
+    label: "Linux",
+    icon: siLinux,
+    bgColor: "#2563eb",
+  },
+};
+
+export const DISTRO_OPTIONS: { id: string; label: string }[] = [
+  { id: "", label: "Auto-detect on SSH login" },
+  { id: "ubuntu", label: siUbuntu.title },
+  { id: "debian", label: siDebian.title },
+  { id: "alpine", label: siAlpinelinux.title },
+  { id: "arch", label: siArchlinux.title },
+  { id: "manjaro", label: siManjaro.title },
+  { id: "endeavour", label: siEndeavouros.title },
+  { id: "fedora", label: siFedora.title },
+  { id: "centos", label: siCentos.title },
+  { id: "rhel", label: "Red Hat (RHEL)" },
+  { id: "rocky", label: siRockylinux.title },
+  { id: "almalinux", label: siAlmalinux.title },
+  { id: "opensuse", label: siOpensuse.title },
+  { id: "kali", label: siKalilinux.title },
+  { id: "mint", label: siLinuxmint.title },
+  { id: "popos", label: siPopos.title },
+  { id: "elementary", label: siElementary.title },
+  { id: "nixos", label: siNixos.title },
+  { id: "gentoo", label: siGentoo.title },
+  { id: "void", label: siVoidlinux.title },
+  { id: "slackware", label: siSlackware.title },
+  { id: "raspbian", label: siRaspberrypi.title },
+  { id: "amazon", label: "Amazon Linux" },
+  { id: "generic", label: "Generic Linux" },
+];
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Distro resolution (stored os_icon -> label/tag heuristic -> generic Linux)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function heuristicDistro(host: Host): DistroType {
+  const combined = [
+    host.label ?? "",
+    (host.tags ?? []).join(" "),
+    host.username ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (combined.includes("ubuntu")) return "ubuntu";
+  if (combined.includes("kali")) return "kali";
+  if (combined.includes("mint")) return "mint";
+  if (combined.includes("pop_os") || combined.includes("popos")) return "popos";
+  if (combined.includes("elementary")) return "elementary";
+  if (combined.includes("debian") || combined.includes("deb")) return "debian";
+  if (combined.includes("alpine")) return "alpine";
+  if (combined.includes("manjaro")) return "manjaro";
+  if (combined.includes("endeavour")) return "endeavour";
+  if (combined.includes("arch")) return "arch";
+  if (combined.includes("fedora")) return "fedora";
+  if (combined.includes("rocky")) return "rocky";
+  if (combined.includes("alma")) return "almalinux";
+  if (combined.includes("centos")) return "centos";
+  if (combined.includes("rhel") || combined.includes("redhat") || combined.includes("red hat")) return "rhel";
+  if (combined.includes("opensuse") || combined.includes("suse")) return "opensuse";
+  if (combined.includes("nixos")) return "nixos";
+  if (combined.includes("gentoo")) return "gentoo";
+  if (combined.includes("void")) return "void";
+  if (combined.includes("slackware")) return "slackware";
+  if (combined.includes("pi") || combined.includes("raspberry") || combined.includes("raspbian")) return "raspbian";
+  if (combined.includes("amazon") || combined.includes("amzn")) return "amazon";
+  return "generic";
+}
+
+export function detectDistro(host: Host): DistroMeta {
+  if (host.os_icon) {
+    const slug = host.os_icon as DistroType;
+    const meta = DISTRO_MAP[slug];
+    if (meta) return meta;
+  }
+  const type = heuristicDistro(host);
+  return DISTRO_MAP[type];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DistroBadge Component
+// ══════════════════════════════════════════════════════════════════════════════
 
 export function DistroBadge({ host, size = "md" }: { host: Host; size?: "sm" | "md" | "lg" }) {
   const distro = detectDistro(host);
   const dim = size === "lg" ? "h-12 w-12" : size === "sm" ? "h-8 w-8" : "h-11 w-11";
-  const iconSize = size === "lg" ? 22 : size === "sm" ? 14 : 18;
+  const iconSize = size === "lg" ? 24 : size === "sm" ? 16 : 20;
 
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-xl text-white shadow-md transition-transform duration-200 group-hover:scale-105 ${dim} ${distro.badgeBg}`}
+      className={`flex shrink-0 items-center justify-center rounded-xl text-white shadow-md transition-transform duration-200 group-hover:scale-105 ${dim}`}
+      style={{ backgroundColor: distro.bgColor }}
+      title={distro.label}
     >
-      {distro.type === "debian" ? (
-        // Authentic Debian swirl SVG
-        <svg viewBox="0 0 100 100" className="h-6 w-6 fill-current">
-          <path
-            d="M50 15c-18 0-33 13-35 31-2 15 6 29 20 35 15 6 32 1 40-12 9-14 4-33-9-42-12-8-29-5-38 6-7 9-5 22 4 29 8 5 18 3 24-4 4-5 3-12-2-16-4-3-10-2-13 2"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="8"
-            strokeLinecap="round"
-          />
-        </svg>
-      ) : distro.type === "ubuntu" ? (
-        // Authentic Ubuntu circle-of-friends SVG
-        <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
-          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" />
-          <circle cx="12" cy="5.2" r="1.8" />
-          <circle cx="6.2" cy="15.2" r="1.8" />
-          <circle cx="17.8" cy="15.2" r="1.8" />
-          <path
-            d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4zm0 6a2 2 0 1 1 2-2 2 2 0 0 1-2 2z"
-            fill="currentColor"
-          />
-        </svg>
-      ) : distro.type === "alpine" ? (
-        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-          <path d="M3 19h18L12 5 3 19zm9-10.5 5.5 8.5h-11L12 8.5z" />
-        </svg>
-      ) : (
-        <Server size={iconSize} />
-      )}
+      <svg
+        viewBox="0 0 24 24"
+        width={iconSize}
+        height={iconSize}
+        className="shrink-0 fill-current"
+      >
+        <path d={distro.icon.path} />
+      </svg>
     </div>
   );
 }

@@ -124,6 +124,8 @@ impl Database {
         let _ = conn.execute("ALTER TABLE credentials ADD COLUMN created_at TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE credentials ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''", []);
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN last_connected_at TEXT", []);
+        // v0.4.8+: auto-detected OS icon per host
+        let _ = conn.execute("ALTER TABLE hosts ADD COLUMN os_icon TEXT", []);
 
         Ok(())
     }
@@ -188,7 +190,7 @@ impl Database {
     pub fn list_hosts(&self) -> Result<Vec<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at FROM hosts ORDER BY label ASC"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at FROM hosts ORDER BY label ASC"
         )?;
 
         let hosts = stmt.query_map([], |row| {
@@ -205,8 +207,9 @@ impl Database {
                 credential_id: row.get(7)?,
                 tags,
                 last_connected_at: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                os_icon: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?.filter_map(|r| r.ok()).collect();
 
@@ -216,7 +219,7 @@ impl Database {
     pub fn get_host(&self, id: &str) -> Result<Option<Host>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at FROM hosts WHERE id = ?1"
+            "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at FROM hosts WHERE id = ?1"
         )?;
 
         let mut rows = stmt.query(params![id])?;
@@ -234,8 +237,9 @@ impl Database {
                 credential_id: row.get(7)?,
                 tags,
                 last_connected_at: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                os_icon: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             }))
         } else {
             Ok(None)
@@ -247,8 +251,8 @@ impl Database {
         let tags_str = serde_json::to_string(&host.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
-            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "INSERT INTO hosts (id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 folder_id=excluded.folder_id,
                 label=excluded.label,
@@ -258,6 +262,7 @@ impl Database {
                 auth_method=excluded.auth_method,
                 credential_id=excluded.credential_id,
                 tags=excluded.tags,
+                os_icon=COALESCE(excluded.os_icon, hosts.os_icon),
                 updated_at=excluded.updated_at",
             params![
                 host.id,
@@ -270,11 +275,22 @@ impl Database {
                 host.credential_id,
                 tags_str,
                 host.last_connected_at,
+                host.os_icon,
                 host.created_at,
                 host.updated_at,
             ],
         )?;
 
+        Ok(())
+    }
+
+    pub fn update_host_os_icon(&self, id: &str, os_icon: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE hosts SET os_icon = ?1, updated_at = ?2 WHERE id = ?3",
+            params![os_icon, now, id],
+        )?;
         Ok(())
     }
 

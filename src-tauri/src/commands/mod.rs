@@ -377,6 +377,11 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
     }
 
     let last_connected_at = existing.as_ref().and_then(|h| h.last_connected_at.clone());
+    let os_icon = if input.os_icon.is_some() {
+        input.os_icon
+    } else {
+        existing.as_ref().and_then(|h| h.os_icon.clone())
+    };
 
     let host = Host {
         id,
@@ -389,6 +394,7 @@ pub fn host_save(state: State<AppState>, input: HostInput, host_id: Option<Strin
         credential_id,
         tags: input.tags,
         last_connected_at,
+        os_icon,
         created_at,
         updated_at: now,
     };
@@ -507,6 +513,7 @@ pub async fn ssh_connect(
             app,
             state.db.clone(),
             session_id,
+            Some(host_id.clone()),
             host.address,
             host.port,
             host.username,

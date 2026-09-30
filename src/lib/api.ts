@@ -11,6 +11,7 @@ export interface Host {
   credential_id?: string | null;
   tags: string[];
   last_connected_at?: string | null;
+  os_icon?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ export interface HostInput {
   secret?: string;
   passphrase?: string;
   tags: string[];
+  os_icon?: string | null;
 }
 
 export interface KeychainItem {

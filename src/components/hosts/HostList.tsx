@@ -309,7 +309,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
 
             <button
               type="button"
-              onClick={openCreateModal}
+              onClick={() => openCreateModal(selectedFolderId ?? undefined)}
               className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm shrink-0 cursor-pointer"
             >
               <Plus size={15} strokeWidth={2.5} />
@@ -410,7 +410,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                 When adding or editing a host, select <strong>{activeFolder.name}</strong> as its folder.
               </p>
               <button
-                onClick={openCreateModal}
+                onClick={() => openCreateModal(selectedFolderId ?? undefined)}
                 className="mt-4 rounded-xl bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition"
               >
                 Add Host Here
@@ -490,7 +490,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
                 </p>
                 {hosts.length === 0 && (
                   <button
-                    onClick={openCreateModal}
+                    onClick={() => openCreateModal()}
                     className="mt-4 rounded-xl bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition"
                   >
                     Add Your First Host
@@ -667,7 +667,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
               {/* Background Empty Area Menu */}
               <button
                 onClick={() => {
-                  openCreateModal();
+                  openCreateModal(selectedFolderId ?? undefined);
                   setContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"

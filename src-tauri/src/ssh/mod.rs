@@ -77,6 +77,7 @@ impl Handler for SshClientHandler {
     }
 }
 
+#[derive(Clone)]
 pub enum SshAuth {
     Password(String),
     PrivateKey { pem: String, passphrase: Option<String> },
@@ -154,6 +155,7 @@ impl SessionManager {
         app: AppHandle,
         db: Arc<Database>,
         session_id: String,
+        host_id: Option<String>,
         address: String,
         port: u16,
         username: String,
@@ -179,7 +181,7 @@ impl SessionManager {
         }
 
         let res = self
-            .do_connect(app, db, session_id.clone(), address, port, username, auth, cols, rows)
+            .do_connect(app, db, session_id.clone(), host_id, address, port, username, auth, cols, rows)
             .await;
 
         {
@@ -195,6 +197,7 @@ impl SessionManager {
         app: AppHandle,
         db: Arc<Database>,
         session_id: String,
+        host_id: Option<String>,
         address: String,
         port: u16,
         username: String,
@@ -222,7 +225,7 @@ impl SessionManager {
         let handler = SshClientHandler {
             address: address.clone(),
             port,
-            db,
+            db: db.clone(),
         };
 
         // Explicitly connect the TCP stream and disable Nagle's algorithm (TCP_NODELAY).
@@ -253,8 +256,8 @@ impl SessionManager {
 
         emit_progress(3, "authenticating", &format!("Authenticating as {username}..."), false);
 
-        let authenticated = match auth {
-            SshAuth::Password(password) => match handle.authenticate_password(&username, &password).await {
+        let authenticated = match &auth {
+            SshAuth::Password(password) => match handle.authenticate_password(&username, password).await {
                 Ok(r) => r,
                 Err(e) => {
                     let msg = format!("Auth error: {e}");
@@ -263,7 +266,7 @@ impl SessionManager {
                 }
             },
             SshAuth::PrivateKey { pem, passphrase } => {
-                let key_pair = match decode_secret_key(&pem, passphrase.as_deref()) {
+                let key_pair = match decode_secret_key(pem, passphrase.as_deref()) {
                     Ok(k) => k,
                     Err(e) => {
                         let msg = format!("Invalid private key: {e}");
@@ -422,6 +425,35 @@ impl SessionManager {
             }
         });
 
+        // Spawn OS detection in the background via a separate exec channel.
+        // Only runs when host_id is provided (interactive SSH sessions).
+        // Fires-and-forgets: any failure is silently ignored — it never
+        // affects the primary PTY channel or the session itself.
+        if let Some(hid) = host_id {
+            let app_for_os = app.clone();
+            let db_for_os = db.clone();
+            let addr_for_os = address.clone();
+            let port_for_os = port;
+            let user_for_os = username.clone();
+            let auth_for_os = auth.clone();
+            tokio::spawn(async move {
+                // Small delay so the interactive shell can fully initialise
+                // before we open a second channel (avoids race conditions on
+                // slower servers).
+                tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                detect_os_via_exec(
+                    &app_for_os,
+                    db_for_os,
+                    addr_for_os,
+                    port_for_os,
+                    user_for_os,
+                    auth_for_os,
+                    hid,
+                )
+                .await;
+            });
+        }
+
         Ok(())
     }
 
@@ -459,5 +491,168 @@ impl SessionManager {
                 .await;
         }
         Ok(())
+    }
+}
+
+/// Parse the output of `cat /etc/os-release` and map it to one of our
+/// canonical distro slugs, which the frontend uses to pick an icon.
+/// Returns `None` when OS detection fails or the output is unrecognisable.
+pub fn parse_os_release(output: &str) -> Option<String> {
+    // Extract the value of a KEY="value" or KEY=value line.
+    let get = |key: &str| -> Option<String> {
+        output.lines().find_map(|line| {
+            let line = line.trim();
+            let prefix = format!("{key}=");
+            if line.starts_with(&prefix) {
+                let val = line[prefix.len()..].trim_matches('"').to_lowercase();
+                Some(val)
+            } else {
+                None
+            }
+        })
+    };
+
+    // Prefer ID_LIKE (parent distro), fall back to ID.
+    let id = get("ID").unwrap_or_default();
+    let id_like = get("ID_LIKE").unwrap_or_default();
+    let pretty = get("PRETTY_NAME").unwrap_or_default();
+    let name = get("NAME").unwrap_or_default();
+
+    let combined = format!("{id} {id_like} {pretty} {name}");
+
+    if combined.contains("ubuntu") {
+        Some("ubuntu".to_string())
+    } else if combined.contains("kali") {
+        Some("kali".to_string())
+    } else if combined.contains("mint") {
+        Some("mint".to_string())
+    } else if combined.contains("pop!_os") || combined.contains("pop_os") || combined.contains("popos") {
+        Some("popos".to_string())
+    } else if combined.contains("elementary") {
+        Some("elementary".to_string())
+    } else if combined.contains("debian") {
+        Some("debian".to_string())
+    } else if combined.contains("alpine") {
+        Some("alpine".to_string())
+    } else if combined.contains("arch") || combined.contains("manjaro") || combined.contains("endeavouros") || combined.contains("endeavour") {
+        if combined.contains("manjaro") {
+            Some("manjaro".to_string())
+        } else if combined.contains("endeavouros") || combined.contains("endeavour") {
+            Some("endeavour".to_string())
+        } else {
+            Some("arch".to_string())
+        }
+    } else if combined.contains("fedora") {
+        Some("fedora".to_string())
+    } else if combined.contains("rocky") {
+        Some("rocky".to_string())
+    } else if combined.contains("almalinux") || combined.contains("alma") {
+        Some("almalinux".to_string())
+    } else if combined.contains("centos") {
+        Some("centos".to_string())
+    } else if combined.contains("rhel") || combined.contains("red hat") || combined.contains("redhat") {
+        Some("rhel".to_string())
+    } else if combined.contains("opensuse") || combined.contains("suse") {
+        Some("opensuse".to_string())
+    } else if combined.contains("gentoo") {
+        Some("gentoo".to_string())
+    } else if combined.contains("nixos") {
+        Some("nixos".to_string())
+    } else if combined.contains("void") {
+        Some("void".to_string())
+    } else if combined.contains("raspbian") || combined.contains("raspberry") {
+        Some("raspbian".to_string())
+    } else if combined.contains("slackware") {
+        Some("slackware".to_string())
+    } else if combined.contains("amazon") || combined.contains("amzn") {
+        Some("amazon".to_string())
+    } else if !id.is_empty() {
+        // Known to be Linux (has /etc/os-release) but distro unrecognised
+        Some("linux".to_string())
+    } else {
+        None
+    }
+}
+
+/// Open a fresh exec channel (not reusing the interactive PTY) and run
+/// `cat /etc/os-release`.  Returns the detected distro slug, or `None`
+/// on any failure — this never propagates errors to the caller.
+pub async fn detect_os_via_exec(
+    app: &AppHandle,
+    db: Arc<Database>,
+    address: String,
+    port: u16,
+    username: String,
+    auth: SshAuth,
+    host_id: String,
+) {
+    let result: Result<Option<String>, String> = async {
+        let config = Arc::new(russh::client::Config {
+            ..Default::default()
+        });
+        let handler = SshClientHandler {
+            address: address.clone(),
+            port,
+            db: db.clone(),
+        };
+        let mut handle = russh::client::connect(config, (address.as_str(), port), handler)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let authenticated = match auth {
+            SshAuth::Password(password) => handle
+                .authenticate_password(&username, &password)
+                .await
+                .map_err(|e| e.to_string())?,
+            SshAuth::PrivateKey { pem, passphrase } => {
+                let key_pair = russh::keys::decode_secret_key(&pem, passphrase.as_deref())
+                    .map_err(|e| e.to_string())?;
+                authenticate_publickey_smart(&mut handle, &username, key_pair)
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
+        };
+
+        if !authenticated.success() {
+            return Ok(None);
+        }
+
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| e.to_string())?;
+        channel
+            .exec(true, "cat /etc/os-release")
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut output = String::new();
+        let mut ch = channel;
+        loop {
+            match ch.wait().await {
+                Some(russh::ChannelMsg::Data { ref data }) => {
+                    output.push_str(&String::from_utf8_lossy(data));
+                    if output.len() > 8192 {
+                        break;
+                    }
+                }
+                Some(russh::ChannelMsg::Eof)
+                | Some(russh::ChannelMsg::Close)
+                | None => break,
+                _ => {}
+            }
+        }
+        let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
+        Ok(parse_os_release(&output))
+    }
+    .await;
+
+    if let Ok(Some(slug)) = result {
+        if let Ok(()) = db.update_host_os_icon(&host_id, &slug) {
+            let _ = app.emit(
+                "host-os-detected",
+                serde_json::json!({ "host_id": host_id, "os_icon": slug }),
+            );
+        }
     }
 }
