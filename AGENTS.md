@@ -36,11 +36,13 @@ Termimus — a self-hosted SSH/server manager desktop app (Termius clone), built
 - **Styling**: Tailwind v4 utility classes with CSS variables defined in `src/index.css` (`--canvas`, `--surface-*`, `--primary`, `--text-*`, etc. — the "Terminal Obsidian" palette). Reuse these variables; don't hardcode hex colors in components.
 - **Fonts**: Inter for UI text, JetBrains Mono/Fira Code for anything monospace (IPs, ports, commands, code). Loaded via Google Fonts in `index.html`.
 - Window is frameless (`decorations: false`); the custom titlebar/window controls live in `src/components/layout/Header.tsx` — don't reintroduce native window chrome.
-- **Version Bump Checklist**: when bumping the app version, update all 4 files simultaneously:
+- **Version Bump Checklist**: when bumping the app version, update all 6 files simultaneously:
   1. `package.json` (`version`)
   2. `src-tauri/tauri.conf.json` (`version`)
   3. `src-tauri/Cargo.toml` (`version`)
   4. `src/stores/useUpdateStore.ts` (`currentVersion`)
+  5. `README.md` (header subtitle `·  vX.Y.Z`, badge URL, and the Downloads table rows)
+  6. `server/internal/handlers/handlers.go` (`version` field in the `/health` response)
   Then run `cargo check` in `src-tauri` so `src-tauri/Cargo.lock` reflects the new package version.
 
 ## Verification
