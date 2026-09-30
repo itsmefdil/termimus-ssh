@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -14,12 +15,14 @@ import {
   ZoomOut,
   RefreshCw,
   Check,
+  Search,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { findPaneContainingTab } from "../../lib/layoutTree";
 import { ConnectionProgress, ConnectionLog } from "./ConnectionProgress";
+import { TerminalSearchBar } from "./TerminalSearchBar";
 
 interface XtermViewProps {
   sessionId: string;
@@ -38,6 +41,7 @@ interface SshProgressEvent {
 interface TerminalSessionEntry {
   term: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   element: HTMLDivElement;
   hasConnected: boolean;
   unlistenFns: Array<() => void>;
@@ -139,13 +143,24 @@ function bindTerminalShortcuts(
   term: Terminal,
   fitAddon: FitAddon,
   targetSessionId: string,
-  onCopyNotify?: (msg: string) => void
+  onCopyNotify?: (msg: string) => void,
+  onOpenSearch?: () => void
 ) {
   term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
     if (event.type !== "keydown") return true;
 
     const isMac = checkIsMac();
     const modKey = isMac ? event.metaKey : event.ctrlKey;
+
+    // Find / Search: Ctrl+F (Linux/Win) or Cmd+F (Mac)
+    if (
+      (isMac && modKey && event.key.toLowerCase() === "f") ||
+      (!isMac && (event.ctrlKey || modKey) && event.key.toLowerCase() === "f")
+    ) {
+      event.preventDefault();
+      onOpenSearch?.();
+      return false;
+    }
 
     // Copy: Ctrl+Shift+C (Linux/Win), Ctrl+Insert, or Cmd+C (Mac with selection)
     if (
@@ -262,6 +277,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number }>({ cols: 0, rows: 0 });
 
   const setConnected = useSessionStore((s) => s.setSessionConnected);
@@ -269,6 +285,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const closeSession = useSessionStore((s) => s.closeSession);
   const host = useHostStore((s) => s.hosts.find((h) => h.id === hostId));
 
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [logs, setLogs] = useState<ConnectionLog[]>(
     () => terminalPool.get(sessionId)?.connectionLogs ?? []
   );
@@ -419,12 +436,19 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       // Reuse existing terminal instance without reconnecting SSH!
       termRef.current = entry.term;
       fitAddonRef.current = entry.fitAddon;
+      searchAddonRef.current = entry.searchAddon;
       lastSizeRef.current = entry.lastSize;
       setIsConnected(entry.hasConnected);
       setLogs([...entry.connectionLogs]);
       setCurrentStep(entry.connectionStep);
       setConnectionError(entry.connectionError);
-      bindTerminalShortcuts(entry.term, entry.fitAddon, sessionId, showCopyToast);
+      bindTerminalShortcuts(
+        entry.term,
+        entry.fitAddon,
+        sessionId,
+        showCopyToast,
+        () => setIsSearchOpen(true)
+      );
 
       if (entry.element.parentElement !== containerRef.current) {
         containerRef.current.appendChild(entry.element);
@@ -471,6 +495,13 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
+
+      const searchAddon = new SearchAddon({
+        highlightLimit: 2000,
+      });
+      term.loadAddon(searchAddon);
+      searchAddonRef.current = searchAddon;
+
       term.open(domWrapper);
 
       // Capture-phase paste handler to ensure DOM paste events are forwarded to xterm
@@ -511,7 +542,13 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       lastSizeRef.current = { cols: initialCols, rows: initialRows };
       termRef.current = term;
       fitAddonRef.current = fitAddon;
-      bindTerminalShortcuts(term, fitAddon, sessionId, showCopyToast);
+      bindTerminalShortcuts(
+        term,
+        fitAddon,
+        sessionId,
+        showCopyToast,
+        () => setIsSearchOpen(true)
+      );
 
       // Keystroke forwarding (supports broadcast to interconnected split panes)
       const dataDisposable = term.onData((data) => {
@@ -567,6 +604,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       entry = {
         term,
         fitAddon,
+        searchAddon,
         element: domWrapper,
         hasConnected: false,
         unlistenFns,
@@ -749,6 +787,23 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
           <div className="my-1 h-[1px] bg-[var(--border)]" />
 
+          {/* Find in Terminal */}
+          <button
+            onClick={() => {
+              setIsSearchOpen(true);
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+          >
+            <div className="flex items-center gap-2">
+              <Search size={13} />
+              <span>Find in Terminal</span>
+            </div>
+            <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
+              {isMac ? "⌘F" : "Ctrl+F"}
+            </span>
+          </button>
+
           {/* Clear Buffer */}
           <button
             onClick={() => {
@@ -856,10 +911,22 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
       {/* Toast Notification on Copy */}
       {copyToast && (
-        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-none">
           <Check size={13} className="text-[var(--primary)] shrink-0" />
           <span>{copyToast}</span>
         </div>
+      )}
+
+      {/* Floating Terminal Search Bar (Ctrl+F / Cmd+F) */}
+      {isSearchOpen && (
+        <TerminalSearchBar
+          searchAddon={searchAddonRef.current}
+          onClose={() => {
+            setIsSearchOpen(false);
+            searchAddonRef.current?.clearDecorations();
+            termRef.current?.focus();
+          }}
+        />
       )}
 
       {/* Termius-Style Connection Progress & Process Tree Overlay */}
