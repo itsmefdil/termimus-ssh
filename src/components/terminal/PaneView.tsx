@@ -32,7 +32,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     toggleMaximizePane,
     splitPane,
     startDragTab,
-    openSession,
+    openSessionInSplit,
     isGroupBroadcastActive,
     toggleGroupBroadcast,
   } = useSessionStore(
@@ -48,7 +48,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       toggleMaximizePane: s.toggleMaximizePane,
       splitPane: s.splitPane,
       startDragTab: s.startDragTab,
-      openSession: s.openSession,
+      openSessionInSplit: s.openSessionInSplit,
       isGroupBroadcastActive: s.isGroupBroadcastActive,
       toggleGroupBroadcast: s.toggleGroupBroadcast,
     }))
@@ -95,7 +95,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     window.addEventListener("pointercancel", cleanup);
   };
 
-  const handleSplitRight = async () => {
+  const handleSplitRight = () => {
     if (!activeTab) return;
     // If pane has another tab, split that tab off to the right
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
@@ -104,15 +104,14 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       return;
     }
 
-    // Otherwise, duplicate current session to the same host in a right split
+    // Otherwise, duplicate current session to the same host in a right split atomically
     const host = hosts.find((h) => h.id === activeTab.hostId);
     if (host) {
-      const newSessionId = await openSession(host, false);
-      splitPane(pane.id, newSessionId, "row", "second");
+      openSessionInSplit(host, pane.id, "row", "second");
     }
   };
 
-  const handleSplitDown = async () => {
+  const handleSplitDown = () => {
     if (!activeTab) return;
     // If pane has another tab, split that tab off down
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
@@ -121,11 +120,10 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       return;
     }
 
-    // Otherwise, duplicate current session to the same host in a down split
+    // Otherwise, duplicate current session to the same host in a down split atomically
     const host = hosts.find((h) => h.id === activeTab.hostId);
     if (host) {
-      const newSessionId = await openSession(host, false);
-      splitPane(pane.id, newSessionId, "column", "second");
+      openSessionInSplit(host, pane.id, "column", "second");
     }
   };
 

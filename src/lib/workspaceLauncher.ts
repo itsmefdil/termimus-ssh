@@ -28,6 +28,6 @@ export async function launchWorkspacePreset(preset: WorkspacePreset): Promise<bo
   }
 
   // Atomically initialize the entire cluster group and its split tree in 1 render
-  sessionStore.openClusterGroup(validNodes, preset.layout, preset.broadcastOnLaunch);
+  sessionStore.openClusterGroup(validNodes, preset.layout, preset.broadcastOnLaunch, preset.name);
   return true;
 }

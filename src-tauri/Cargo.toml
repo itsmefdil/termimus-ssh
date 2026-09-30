@@ -1,6 +1,6 @@
 [package]
 name = "termimus"
-version = "0.4.5"
+version = "0.4.6"
 description = "Termimus - Self-hosted SSH & Server Manager"
 authors = ["noma"]
 edition = "2021"

@@ -43,6 +43,11 @@ interface TerminalSessionEntry {
   unlistenFns: Array<() => void>;
   dataDisposable: { dispose: () => void };
   lastSize: { cols: number; rows: number };
+  // Persist connection progress state across remounts so logs are never lost
+  // when the pane layout changes (e.g. split) while a connection is in progress.
+  connectionLogs: ConnectionLog[];
+  connectionStep: number;
+  connectionError: string | null;
 }
 
 // Module-level persistent pool of active xterm instances.
@@ -261,9 +266,15 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const closeSession = useSessionStore((s) => s.closeSession);
   const host = useHostStore((s) => s.hosts.find((h) => h.id === hostId));
 
-  const [logs, setLogs] = useState<ConnectionLog[]>([]);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<ConnectionLog[]>(
+    () => terminalPool.get(sessionId)?.connectionLogs ?? []
+  );
+  const [currentStep, setCurrentStep] = useState(
+    () => terminalPool.get(sessionId)?.connectionStep ?? 1
+  );
+  const [connectionError, setConnectionError] = useState<string | null>(
+    () => terminalPool.get(sessionId)?.connectionError ?? null
+  );
   // Initialize from the persistent pool synchronously (not in an effect) so a
   // remount of an already-connected session (e.g. moving into a new split
   // layout) doesn't flash the ConnectionProgress loading screen for a frame
@@ -310,8 +321,8 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     };
   }, [contextMenu]);
 
-  const handleSplitRight = async () => {
-    const { rootPane, splitPane, openSession } = useSessionStore.getState();
+  const handleSplitRight = () => {
+    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -324,13 +335,12 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     const hosts = useHostStore.getState().hosts;
     const targetHost = hosts.find((h) => h.id === hostId);
     if (targetHost) {
-      const newSessionId = await openSession(targetHost, false);
-      splitPane(pane.id, newSessionId, "row", "second");
+      openSessionInSplit(targetHost, pane.id, "row", "second");
     }
   };
 
-  const handleSplitDown = async () => {
-    const { rootPane, splitPane, openSession } = useSessionStore.getState();
+  const handleSplitDown = () => {
+    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -343,30 +353,40 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     const hosts = useHostStore.getState().hosts;
     const targetHost = hosts.find((h) => h.id === hostId);
     if (targetHost) {
-      const newSessionId = await openSession(targetHost, false);
-      splitPane(pane.id, newSessionId, "column", "second");
+      openSessionInSplit(targetHost, pane.id, "column", "second");
     }
   };
 
   const startConnection = useCallback(
     (cols: number, rows: number) => {
+      const initialLog: ConnectionLog = {
+        step: 1,
+        message: `Initiating connection to ${host?.address || "server"}...`,
+        timestamp: new Date().toISOString(),
+        isError: false,
+      };
+
+      const poolEntry = terminalPool.get(sessionId);
+      if (poolEntry) {
+        poolEntry.connectionLogs = [initialLog];
+        poolEntry.connectionStep = 1;
+        poolEntry.connectionError = null;
+        poolEntry.hasConnected = false;
+      }
+
       setConnectionError(null);
       setIsConnected(false);
       setCurrentStep(1);
-      setLogs([
-        {
-          step: 1,
-          message: `Initiating connection to ${host?.address || "server"}...`,
-          timestamp: new Date().toISOString(),
-          isError: false,
-        },
-      ]);
+      setLogs([initialLog]);
 
       api
         .connectSsh(hostId, sessionId, cols, rows)
         .then(() => {
           const entry = terminalPool.get(sessionId);
-          if (entry) entry.hasConnected = true;
+          if (entry) {
+            entry.hasConnected = true;
+            entry.connectionError = null;
+          }
           setIsConnected(true);
           setConnected(sessionId, true);
           setConnectionError(null);
@@ -374,7 +394,10 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         .catch((e) => {
           const errStr = String(e);
           const entry = terminalPool.get(sessionId);
-          if (entry) entry.hasConnected = false;
+          if (entry) {
+            entry.hasConnected = false;
+            entry.connectionError = errStr;
+          }
           setIsConnected(false);
           setConnectionError(errStr);
           setError(sessionId, errStr);
@@ -395,6 +418,9 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       fitAddonRef.current = entry.fitAddon;
       lastSizeRef.current = entry.lastSize;
       setIsConnected(entry.hasConnected);
+      setLogs([...entry.connectionLogs]);
+      setCurrentStep(entry.connectionStep);
+      setConnectionError(entry.connectionError);
       bindTerminalShortcuts(entry.term, entry.fitAddon, sessionId, showCopyToast);
 
       if (entry.element.parentElement !== containerRef.current) {
@@ -511,16 +537,25 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
       listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
         const p = event.payload;
+        const newLog: ConnectionLog = {
+          step: p.step,
+          message: p.message,
+          timestamp: p.timestamp,
+          isError: p.is_error,
+        };
+
+        // Persist into pool so remounts can recover state
+        const poolEntry = terminalPool.get(sessionId);
+        if (poolEntry) {
+          poolEntry.connectionStep = p.step;
+          poolEntry.connectionLogs = [...poolEntry.connectionLogs, newLog];
+          if (p.is_error) {
+            poolEntry.connectionError = p.message;
+          }
+        }
+
         setCurrentStep(p.step);
-        setLogs((prev) => [
-          ...prev,
-          {
-            step: p.step,
-            message: p.message,
-            timestamp: p.timestamp,
-            isError: p.is_error,
-          },
-        ]);
+        setLogs((prev) => [...prev, newLog]);
         if (p.is_error) {
           setConnectionError(p.message);
         }
@@ -534,6 +569,9 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         unlistenFns,
         dataDisposable,
         lastSize: { cols: initialCols, rows: initialRows },
+        connectionLogs: [],
+        connectionStep: 1,
+        connectionError: null,
       };
       terminalPool.set(sessionId, entry);
 

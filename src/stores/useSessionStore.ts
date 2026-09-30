@@ -39,6 +39,8 @@ export interface DragTarget {
 export interface TerminalGroup {
   id: string; // group id
   rootPane: PaneNode;
+  /** Optional display label shown in the top header tab (e.g. workspace preset name) */
+  label?: string;
 }
 
 interface SessionState {
@@ -69,6 +71,20 @@ interface SessionState {
 
   // Session lifecycle
   openSession: (host: Host, newGroup?: boolean) => Promise<string>;
+  /**
+   * Atomically creates a new session AND splits the target pane in one state update.
+   * This avoids the double-render / lost-progress-log bug that occurs when
+   * openSession (which docks the tab into the active pane) is followed by a
+   * separate splitPane call — the intermediate dock render would mount XtermView,
+   * start the SSH connection and register progress listeners, then the split would
+   * unmount/remount the component, resetting all React state and losing logs.
+   */
+  openSessionInSplit: (
+    host: Host,
+    targetPaneId: string,
+    direction: SplitDirection,
+    side?: "first" | "second"
+  ) => string;
   openClusterGroup: (
     nodes: { host: Host; paneIndex: number }[],
     layout:
@@ -78,7 +94,8 @@ interface SessionState {
       | "split-1-2"
       | "split-2-1"
       | "triple-column",
-    broadcast?: boolean
+    broadcast?: boolean,
+    label?: string
   ) => string[];
   closeSession: (sessionId: string) => Promise<void>;
   closeGroup: (groupId: string) => Promise<void>;
@@ -192,7 +209,83 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return sessionId;
   },
 
-  openClusterGroup: (nodes, layout, broadcast = false) => {
+  openSessionInSplit: (
+    host: Host,
+    targetPaneId: string,
+    direction: SplitDirection,
+    side: "first" | "second" = "second"
+  ) => {
+    const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newTab: SshTab = {
+      id: sessionId,
+      hostId: host.id,
+      hostLabel: host.label,
+      hostAddress: `${host.username}@${host.address}`,
+      connected: false,
+      connecting: true,
+    };
+
+    set((state) => {
+      // Fallback: If no group exists yet, create initial group
+      if (!state.activeGroupId || state.groups.length === 0 || !state.rootPane) {
+        const initial = createInitialLayout(sessionId);
+        const newGroupObj: TerminalGroup = {
+          id: generateGroupId(),
+          rootPane: initial,
+        };
+
+        return {
+          tabs: [...state.tabs, newTab],
+          activeTabId: sessionId,
+          groups: [...state.groups, newGroupObj],
+          activeGroupId: newGroupObj.id,
+          rootPane: initial,
+          activePaneId: initial.id,
+          maximizedPaneId: null,
+        };
+      }
+
+      const activeGroup =
+        state.groups.find((g) => g.id === state.activeGroupId) || state.groups[0];
+
+      // Ensure targetPaneId exists in active group's rootPane; fallback to first leaf if not found
+      let effectiveTargetPaneId = targetPaneId;
+      if (!findPaneById(activeGroup.rootPane, effectiveTargetPaneId)) {
+        const leaves = getAllLeafPanes(activeGroup.rootPane);
+        if (leaves.length > 0) {
+          effectiveTargetPaneId = leaves[0].id;
+        }
+      }
+
+      // Directly split the target leaf into two panes with the new sessionId
+      const updatedRoot = splitLeafNode(
+        activeGroup.rootPane,
+        effectiveTargetPaneId,
+        sessionId,
+        direction,
+        side
+      );
+
+      const updatedGroups = state.groups.map((g) =>
+        g.id === activeGroup.id ? { ...g, rootPane: updatedRoot } : g
+      );
+
+      const newPane = findPaneContainingTab(updatedRoot, sessionId);
+
+      return {
+        tabs: [...state.tabs, newTab],
+        groups: updatedGroups,
+        rootPane: updatedRoot,
+        activePaneId: newPane ? newPane.id : state.activePaneId,
+        activeTabId: sessionId,
+        maximizedPaneId: null, // exit maximized on split
+      };
+    });
+
+    return sessionId;
+  },
+
+  openClusterGroup: (nodes, layout, broadcast = false, label) => {
     if (nodes.length === 0) return [];
 
     const sessionEntries = nodes.map((n, idx) => {
@@ -259,6 +352,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const newGroup: TerminalGroup = {
       id: generateGroupId(),
+      label,
       rootPane,
     };
 

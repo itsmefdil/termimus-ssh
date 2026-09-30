@@ -143,26 +143,24 @@ export function Header({
     setTabContextMenu(null);
   };
 
-  const handleSplitRightTab = async () => {
+  const handleSplitRightTab = () => {
     if (!targetHost || !targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
     if (leaves[0]) {
-      const newSid = await useSessionStore.getState().openSession(targetHost, false);
-      useSessionStore.getState().splitPane(leaves[0].id, newSid, "row", "second");
+      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "row", "second");
     }
     setTabContextMenu(null);
   };
 
-  const handleSplitDownTab = async () => {
+  const handleSplitDownTab = () => {
     if (!targetHost || !targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
     if (leaves[0]) {
-      const newSid = await useSessionStore.getState().openSession(targetHost, false);
-      useSessionStore.getState().splitPane(leaves[0].id, newSid, "column", "second");
+      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "column", "second");
     }
     setTabContextMenu(null);
   };
@@ -513,9 +511,13 @@ export function Header({
             const isConnecting = groupTabs.some((t) => t.connecting);
             const isConnected = groupTabs.every((t) => t.connected);
 
-            // e.g. "Web Server (2)" when split into 2 terminals!
-            const displayLabel =
-              count > 1 ? `${primaryTab.hostLabel} (${count})` : primaryTab.hostLabel;
+            // If the group has a workspace label, use it; otherwise fall back to
+            // the primary host name, with a count suffix when split into multiple panes.
+            const displayLabel = group.label
+              ? group.label
+              : count > 1
+              ? `${primaryTab.hostLabel} (${count})`
+              : primaryTab.hostLabel;
 
             return (
               <div
