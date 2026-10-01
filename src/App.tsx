@@ -243,7 +243,7 @@ function App() {
       </div>
 
       {/* Vault Setup/Unlock Modal */}
-      <VaultModal />
+      {!isUnlocked && <VaultModal />}
 
       {/* Host Create/Edit Modal */}
       <HostModal onOpenKeychain={() => handleNavChange("keychain")} />

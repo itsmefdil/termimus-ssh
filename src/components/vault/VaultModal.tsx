@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Lock, ShieldCheck, KeyRound, Cloud, Server, Eye, EyeOff } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -30,6 +30,17 @@ export function VaultModal() {
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
+  // Clear credentials whenever the vault locks or unlocks
+  useEffect(() => {
+    if (!isUnlocked) {
+      setPassword("");
+      setConfirmPassword("");
+      setSyncPassphrase("");
+      setSyncMasterPassword("");
+      setLocalError(null);
+    }
+  }, [isUnlocked]);
+
   if (isUnlocked) return null;
 
   async function handleSubmitNew(e: React.FormEvent) {
@@ -48,6 +59,8 @@ export function VaultModal() {
       setSubmitting(true);
       try {
         await setup(password);
+        setPassword("");
+        setConfirmPassword("");
       } catch (err) {
         setLocalError(String(err));
       } finally {
@@ -57,6 +70,7 @@ export function VaultModal() {
       setSubmitting(true);
       try {
         await unlock(password);
+        setPassword("");
       } catch (err) {
         setLocalError(String(err));
       } finally {
@@ -125,6 +139,8 @@ export function VaultModal() {
 
       // Unlock vault with master password from original device
       await unlock(syncMasterPassword);
+      setSyncPassphrase("");
+      setSyncMasterPassword("");
 
       // Refresh all domain stores
       useHostStore.getState().refresh();
@@ -226,6 +242,7 @@ export function VaultModal() {
                 <input
                   type="password"
                   autoFocus
+                  autoComplete="off"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password..."
@@ -246,6 +263,7 @@ export function VaultModal() {
                 <div className="relative">
                   <input
                     type="password"
+                    autoComplete="off"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repeat password..."
@@ -352,6 +370,7 @@ export function VaultModal() {
               <div className="relative">
                 <input
                   type={showSyncPassphrase ? "text" : "password"}
+                  autoComplete="off"
                   value={syncPassphrase}
                   onChange={(e) => setSyncPassphrase(e.target.value)}
                   placeholder="Passphrase used to encrypt the backup..."
@@ -377,6 +396,7 @@ export function VaultModal() {
               <div className="relative">
                 <input
                   type={showSyncMasterPassword ? "text" : "password"}
+                  autoComplete="off"
                   value={syncMasterPassword}
                   onChange={(e) => setSyncMasterPassword(e.target.value)}
                   placeholder="Enter original vault password..."
