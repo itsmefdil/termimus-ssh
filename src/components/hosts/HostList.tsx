@@ -129,14 +129,19 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
 
   useEffect(() => {
     if (!contextMenu) return;
+    // Use mousedown instead of pointerdown for the dismiss listener.
+    // On Windows (WebView2/Chromium), synthetic React onPointerDown handlers
+    // on the context menu container can lose the stopPropagation race against a
+    // native pointerdown window listener.  mousedown fires slightly later in the
+    // event sequence and is reliably stopped by the container's onMouseDown guard.
     const handleClose = () => setContextMenu(null);
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setContextMenu(null);
     };
-    window.addEventListener("pointerdown", handleClose);
+    window.addEventListener("mousedown", handleClose);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", handleClose);
+      window.removeEventListener("mousedown", handleClose);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [contextMenu]);
@@ -671,6 +676,7 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
           className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
           onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {contextMenu.type === "host" && contextMenu.host ? (
             <>

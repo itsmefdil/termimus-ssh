@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Termimus",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "identifier": "com.termimus.app",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -19,7 +19,9 @@
         "minWidth": 500,
         "minHeight": 400,
         "decorations": false,
-        "shadow": false
+        "shadow": false,
+        "backgroundColor": [10, 14, 20, 255],
+        "theme": "Dark"
       }
     ],
     "security": {

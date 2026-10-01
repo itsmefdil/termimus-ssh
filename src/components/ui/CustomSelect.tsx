@@ -44,6 +44,9 @@ export function CustomSelect({
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        // Stop immediate propagation so that parent modal's Escape handler
+        // does not also fire and close the entire modal when dismissing this dropdown.
+        e.stopImmediatePropagation();
         handleClose();
       }
     }

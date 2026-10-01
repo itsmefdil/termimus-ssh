@@ -142,8 +142,15 @@ export function VaultModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl">
+    <div
+      data-tauri-drag-region
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+    >
+      {/* inner panel: explicitly opt out of drag so clicks/inputs work normally */}
+      <div
+        data-tauri-drag-region="false"
+        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl"
+      >
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)] shrink-0">
             {isInitialized ? <Lock size={22} /> : setupMode === "sync" ? <Cloud size={22} /> : <ShieldCheck size={22} />}

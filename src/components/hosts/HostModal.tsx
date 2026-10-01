@@ -177,15 +177,16 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
     setShowPassword(true);
   }
 
-  // Close modal on Escape key press
+  // Close modal on Escape key press (use capture phase so CustomSelect's bubble-phase
+  // handler can call stopImmediatePropagation() first when its dropdown is open)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape" && isHostModalOpen) {
         closeHostModal();
       }
     }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, { capture: false });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: false });
   }, [isHostModalOpen, closeHostModal]);
 
   if (!isHostModalOpen) return null;
@@ -264,7 +265,12 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
 
   return (
     <div
-      onClick={(e) => {
+      onPointerDown={(e) => {
+        // Use onPointerDown (fires before click) so the backdrop close does NOT
+        // race with the same click that just opened the modal.  The target guard
+        // ensures we only close when the user actually clicks the dark backdrop
+        // area, not the inner panel.  e.preventDefault() is intentionally omitted
+        // so that text-input focus inside the modal still works normally.
         if (e.target === e.currentTarget) closeHostModal();
       }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
