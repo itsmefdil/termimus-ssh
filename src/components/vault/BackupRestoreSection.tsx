@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { api, ImportSummary } from "../../lib/api";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ export function BackupRestoreSection() {
         replaceAll,
         importPassphrase.trim() || undefined
       );
+      useWorkspaceStore.getState().refresh();
       setImportSummary(summary);
       setPendingImportJson(null);
       setImportPassphrase("");
@@ -213,7 +215,7 @@ export function BackupRestoreSection() {
             Encrypted Backup &amp; Restore
           </h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Export all hosts, folders, snippets, tunnels, and trusted keys. Credentials stay AES-256-GCM encrypted inside the file.
+            Export all hosts, folders, snippets, workspaces, tunnels, and trusted keys. Credentials stay AES-256-GCM encrypted inside the file.
           </p>
         </div>
       </div>
@@ -260,6 +262,7 @@ export function BackupRestoreSection() {
             <span>Folders: {importSummary.folders}</span>
             <span>Credentials: {importSummary.credentials}</span>
             <span>Snippets: {importSummary.snippets}</span>
+            <span>Workspaces: {importSummary.workspace_presets ?? 0}</span>
             <span>Tunnels: {importSummary.port_forwards}</span>
             <span>Known Hosts: {importSummary.known_hosts}</span>
           </div>

@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone};
+use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone, WorkspacePreset, PresetNode};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -92,6 +92,17 @@ impl Database {
                 title TEXT NOT NULL,
                 command TEXT NOT NULL,
                 tags TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS workspace_presets (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                layout TEXT NOT NULL,
+                nodes TEXT NOT NULL DEFAULT '[]',
+                broadcast_on_launch BOOLEAN NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -701,6 +712,94 @@ impl Database {
         }
     }
 
+    pub fn list_workspace_presets(&self) -> Result<Vec<WorkspacePreset>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets ORDER BY name ASC"
+        )?;
+
+        let presets = stmt.query_map([], |row| {
+            let nodes_str: String = row.get(4)?;
+            let nodes: Vec<PresetNode> = serde_json::from_str(&nodes_str).unwrap_or_default();
+            Ok(WorkspacePreset {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                layout: row.get(3)?,
+                nodes,
+                broadcast_on_launch: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok(presets)
+    }
+
+    pub fn get_workspace_preset(&self, id: &str) -> Result<Option<WorkspacePreset>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets WHERE id = ?1"
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let nodes_str: String = row.get(4)?;
+            let nodes: Vec<PresetNode> = serde_json::from_str(&nodes_str).unwrap_or_default();
+            Ok(Some(WorkspacePreset {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                layout: row.get(3)?,
+                nodes,
+                broadcast_on_launch: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save_workspace_preset(&self, preset: &WorkspacePreset) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let nodes_str = serde_json::to_string(&preset.nodes).unwrap_or_else(|_| "[]".to_string());
+
+        conn.execute(
+            "INSERT INTO workspace_presets (id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                description=excluded.description,
+                layout=excluded.layout,
+                nodes=excluded.nodes,
+                broadcast_on_launch=excluded.broadcast_on_launch,
+                updated_at=excluded.updated_at",
+            params![
+                preset.id,
+                preset.name,
+                preset.description,
+                preset.layout,
+                nodes_str,
+                preset.broadcast_on_launch,
+                preset.created_at,
+                preset.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_workspace_preset(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM workspace_presets WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('workspace_preset', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
+        Ok(())
+    }
+
     pub fn get_folder(&self, id: &str) -> Result<Option<Folder>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at FROM folders WHERE id = ?1")?;
@@ -838,6 +937,7 @@ impl Database {
             snippets: self.list_snippets()?,
             known_hosts: self.list_known_hosts()?,
             tombstones: self.list_tombstones()?,
+            workspace_presets: self.list_workspace_presets()?,
         })
     }
 
@@ -862,6 +962,7 @@ impl Database {
                     "DELETE FROM tombstones;
                      DELETE FROM known_hosts;
                      DELETE FROM snippets;
+                     DELETE FROM workspace_presets;
                      DELETE FROM port_forwards;
                      DELETE FROM hosts;
                      DELETE FROM credentials;
@@ -920,6 +1021,14 @@ impl Database {
                             if local.updated_at <= ts.deleted_at {
                                 let conn = self.conn.lock().unwrap();
                                 let _ = conn.execute("DELETE FROM snippets WHERE id = ?1", params![&ts.entity_id]);
+                            }
+                        }
+                    }
+                    "workspace_preset" => {
+                        if let Ok(Some(local)) = self.get_workspace_preset(&ts.entity_id) {
+                            if local.updated_at <= ts.deleted_at {
+                                let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("DELETE FROM workspace_presets WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
                     }
@@ -994,6 +1103,21 @@ impl Database {
             self.save_snippet(snippet)?;
         }
 
+        let mut workspace_presets_imported: usize = 0;
+        for preset in &bundle.workspace_presets {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("workspace_preset", &preset.id) {
+                    if preset.updated_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("workspace_preset", &preset.id);
+                    }
+                }
+            }
+            self.save_workspace_preset(preset)?;
+            workspace_presets_imported += 1;
+        }
+
         // TOFU / MITM protection: during a merge, never overwrite an existing
         // trusted fingerprint with a different one from the backup — that would
         // silently defeat host-key verification for servers the user has already
@@ -1035,6 +1159,7 @@ impl Database {
             snippets: bundle.snippets.len(),
             known_hosts: known_hosts_imported,
             known_hosts_conflicts,
+            workspace_presets: workspace_presets_imported,
             vault_meta_restored,
             safety_snapshot_path: None, // filled in by the command layer after writing to disk
         }, safety_snapshot_json))

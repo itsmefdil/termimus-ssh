@@ -27,11 +27,16 @@ interface WorkspaceViewProps {
 export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
   const {
     presets,
+    refresh,
     openCreateModal,
     openEditModal,
     duplicatePreset,
     deletePreset,
   } = useWorkspaceStore();
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const { groups, activeGroupId, tabs } = useSessionStore(
     useShallow((s) => ({ groups: s.groups, activeGroupId: s.activeGroupId, tabs: s.tabs }))

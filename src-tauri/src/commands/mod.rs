@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary};
+use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput};
 use crate::db::Database;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
@@ -1136,6 +1136,45 @@ pub fn snippet_save(
 #[tauri::command]
 pub fn snippet_delete(state: State<AppState>, id: String) -> Result<(), String> {
     state.db.delete_snippet(&id).map_err(|e| e.to_string())
+}
+
+// ================= WORKSPACE PRESET COMMANDS =================
+
+#[tauri::command]
+pub fn workspace_preset_list(state: State<AppState>) -> Result<Vec<WorkspacePreset>, String> {
+    state.db.list_workspace_presets().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn workspace_preset_save(
+    state: State<AppState>,
+    input: WorkspacePresetInput,
+    preset_id: Option<String>,
+) -> Result<WorkspacePreset, String> {
+    let now = Utc::now().to_rfc3339();
+    let id = preset_id.unwrap_or_else(|| format!("preset-{}", Uuid::new_v4()));
+
+    let existing = state.db.get_workspace_preset(&id).map_err(|e| e.to_string())?;
+    let created_at = existing.map(|p| p.created_at).unwrap_or(now.clone());
+
+    let preset = WorkspacePreset {
+        id,
+        name: input.name,
+        description: input.description,
+        layout: input.layout,
+        nodes: input.nodes,
+        broadcast_on_launch: input.broadcast_on_launch.unwrap_or(false),
+        created_at,
+        updated_at: now,
+    };
+
+    state.db.save_workspace_preset(&preset).map_err(|e| e.to_string())?;
+    Ok(preset)
+}
+
+#[tauri::command]
+pub fn workspace_preset_delete(state: State<AppState>, id: String) -> Result<(), String> {
+    state.db.delete_workspace_preset(&id).map_err(|e| e.to_string())
 }
 
 // ================= PING / LATENCY COMMANDS =================

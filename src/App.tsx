@@ -6,6 +6,7 @@ import { useHostStore } from "./stores/useHostStore";
 import { useSessionStore } from "./stores/useSessionStore";
 import { useSnippetStore } from "./stores/useSnippetStore";
 import { useTunnelStore } from "./stores/useTunnelStore";
+import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { Sidebar, ActiveTab } from "./components/layout/Sidebar";
 import { Header } from "./components/layout/Header";
 import { ResizeHandles } from "./components/layout/ResizeHandles";
@@ -105,6 +106,7 @@ function App() {
       refreshKeychain();
       useSnippetStore.getState().refresh();
       useTunnelStore.getState().refresh();
+      useWorkspaceStore.getState().refresh();
     }
   }, [isUnlocked, refreshHosts, refreshKeychain]);
 

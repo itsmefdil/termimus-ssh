@@ -6,6 +6,7 @@ import { useKeychainStore } from "./useKeychainStore";
 import { useSnippetStore } from "./useSnippetStore";
 import { useTunnelStore } from "./useTunnelStore";
 import { useKnownHostsStore } from "./useKnownHostsStore";
+import { useWorkspaceStore } from "./useWorkspaceStore";
 
 export interface ConnectedDevice {
   id: string;
@@ -239,6 +240,7 @@ export const useSyncStore = create<SyncState>()(
           useSnippetStore.getState().refresh();
           useTunnelStore.getState().refresh();
           useKnownHostsStore.getState().refresh();
+          useWorkspaceStore.getState().refresh();
 
           const now = new Date().toISOString();
           set({

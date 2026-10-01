@@ -1,30 +1,13 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import {
+  api,
+  PresetLayoutType,
+  PresetNode,
+  WorkspacePreset,
+  WorkspacePresetInput,
+} from "../lib/api";
 
-export type PresetLayoutType =
-  | "split-vertical"   // 2 panes: Left & Right (1x2)
-  | "split-horizontal" // 2 panes: Top & Bottom (2x1)
-  | "grid-4"           // 4 panes: 2x2 Quad Grid
-  | "split-1-2"        // 3 panes: 1 Left, 2 Right Stacked
-  | "split-2-1"        // 3 panes: 2 Top Stacked, 1 Bottom Wide
-  | "triple-column";   // 3 panes: 3 Columns Side-by-Side
-
-export interface PresetNode {
-  paneIndex: number; // 0, 1, 2, 3
-  hostId: string;
-  label?: string; // Optional custom pane label override
-}
-
-export interface WorkspacePreset {
-  id: string;
-  name: string;
-  description?: string;
-  layout: PresetLayoutType;
-  nodes: PresetNode[];
-  broadcastOnLaunch?: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { PresetLayoutType, PresetNode, WorkspacePreset, WorkspacePresetInput };
 
 export function getPaneCountForLayout(layout: PresetLayoutType): number {
   switch (layout) {
@@ -89,111 +72,116 @@ export function getLayoutMeta(layout: PresetLayoutType): {
 
 interface WorkspaceState {
   presets: WorkspacePreset[];
+  isLoading: boolean;
+  error: string | null;
   isModalOpen: boolean;
   editingPreset: WorkspacePreset | null;
 
+  refresh: () => Promise<void>;
   openCreateModal: (initialPreset?: Partial<WorkspacePreset>) => void;
   openEditModal: (preset: WorkspacePreset) => void;
   closeModal: () => void;
   savePreset: (
-    preset: Omit<WorkspacePreset, "id" | "createdAt" | "updatedAt">,
+    preset: WorkspacePresetInput,
     id?: string
-  ) => string;
-  deletePreset: (id: string) => void;
-  duplicatePreset: (id: string) => void;
+  ) => Promise<string>;
+  deletePreset: (id: string) => Promise<void>;
+  duplicatePreset: (id: string) => Promise<void>;
 }
 
-export const useWorkspaceStore = create<WorkspaceState>()(
-  persist(
-    (set, get) => ({
-      presets: [],
-      isModalOpen: false,
-      editingPreset: null,
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+  presets: [],
+  isLoading: false,
+  error: null,
+  isModalOpen: false,
+  editingPreset: null,
 
-      openCreateModal: (initialPreset) => {
-        const dummy: WorkspacePreset = {
-          id: "",
-          name: initialPreset?.name || "",
-          description: initialPreset?.description || "",
-          layout: initialPreset?.layout || "split-vertical",
-          nodes: initialPreset?.nodes || [],
-          broadcastOnLaunch: initialPreset?.broadcastOnLaunch || false,
-          createdAt: "",
-          updatedAt: "",
-        };
-        set({ isModalOpen: true, editingPreset: dummy });
-      },
-
-      openEditModal: (preset) => {
-        set({ isModalOpen: true, editingPreset: preset });
-      },
-
-      closeModal: () => {
-        set({ isModalOpen: false, editingPreset: null });
-      },
-
-      savePreset: (input, id) => {
-        const now = new Date().toISOString();
-        if (id) {
-          // Update existing
-          set((state) => ({
-            presets: state.presets.map((p) =>
-              p.id === id
-                ? {
-                    ...p,
-                    ...input,
-                    updatedAt: now,
-                  }
-                : p
-            ),
-            isModalOpen: false,
-            editingPreset: null,
-          }));
-          return id;
-        }
-
-        // Create brand new
-        const newId = `preset-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const newPreset: WorkspacePreset = {
-          ...input,
-          id: newId,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        set((state) => ({
-          presets: [newPreset, ...state.presets],
-          isModalOpen: false,
-          editingPreset: null,
-        }));
-
-        return newId;
-      },
-
-      deletePreset: (id) => {
-        set((state) => ({
-          presets: state.presets.filter((p) => p.id !== id),
-        }));
-      },
-
-      duplicatePreset: (id) => {
-        const preset = get().presets.find((p) => p.id === id);
-        if (!preset) return;
-        const now = new Date().toISOString();
-        const copy: WorkspacePreset = {
-          ...preset,
-          id: `preset-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          name: `${preset.name} (Copy)`,
-          createdAt: now,
-          updatedAt: now,
-        };
-        set((state) => ({
-          presets: [copy, ...state.presets],
-        }));
-      },
-    }),
-    {
-      name: "termimus_workspace_presets",
+  refresh: async () => {
+    if (get().presets.length === 0) {
+      set({ isLoading: true, error: null });
     }
-  )
-);
+    try {
+      let presets = await api.listWorkspacePresets();
+
+      // One-time automatic migration from legacy localStorage to SQLite
+      if (presets.length === 0) {
+        try {
+          const raw = localStorage.getItem("termimus_workspace_presets");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const legacyPresets: WorkspacePreset[] = parsed?.state?.presets || [];
+            if (Array.isArray(legacyPresets) && legacyPresets.length > 0) {
+              for (const p of legacyPresets) {
+                await api.saveWorkspacePreset(
+                  {
+                    name: p.name,
+                    description: p.description,
+                    layout: p.layout,
+                    nodes: p.nodes,
+                    broadcastOnLaunch: p.broadcastOnLaunch,
+                  },
+                  p.id
+                );
+              }
+              localStorage.removeItem("termimus_workspace_presets");
+              presets = await api.listWorkspacePresets();
+            }
+          }
+        } catch {
+          // Non-fatal legacy migration fallback
+        }
+      }
+
+      set({ presets, isLoading: false });
+    } catch (e) {
+      set({ isLoading: false, error: String(e) });
+    }
+  },
+
+  openCreateModal: (initialPreset) => {
+    const dummy: WorkspacePreset = {
+      id: "",
+      name: initialPreset?.name || "",
+      description: initialPreset?.description || "",
+      layout: initialPreset?.layout || "split-vertical",
+      nodes: initialPreset?.nodes || [],
+      broadcastOnLaunch: initialPreset?.broadcastOnLaunch || false,
+      createdAt: "",
+      updatedAt: "",
+    };
+    set({ isModalOpen: true, editingPreset: dummy });
+  },
+
+  openEditModal: (preset) => {
+    set({ isModalOpen: true, editingPreset: preset });
+  },
+
+  closeModal: () => {
+    set({ isModalOpen: false, editingPreset: null });
+  },
+
+  savePreset: async (input, id) => {
+    const saved = await api.saveWorkspacePreset(input, id);
+    set({ isModalOpen: false, editingPreset: null });
+    await get().refresh();
+    return saved.id;
+  },
+
+  deletePreset: async (id: string) => {
+    await api.deleteWorkspacePreset(id);
+    await get().refresh();
+  },
+
+  duplicatePreset: async (id: string) => {
+    const preset = get().presets.find((p) => p.id === id);
+    if (!preset) return;
+    await api.saveWorkspacePreset({
+      name: `${preset.name} (Copy)`,
+      description: preset.description,
+      layout: preset.layout,
+      nodes: preset.nodes,
+      broadcastOnLaunch: preset.broadcastOnLaunch,
+    });
+    await get().refresh();
+  },
+}));

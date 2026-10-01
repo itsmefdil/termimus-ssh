@@ -227,6 +227,44 @@ pub struct SnippetInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetNode {
+    #[serde(alias = "pane_index")]
+    pub pane_index: usize,
+    #[serde(alias = "host_id")]
+    pub host_id: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePreset {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub layout: String,
+    pub nodes: Vec<PresetNode>,
+    #[serde(default, alias = "broadcast_on_launch")]
+    pub broadcast_on_launch: bool,
+    #[serde(alias = "created_at")]
+    pub created_at: String,
+    #[serde(alias = "updated_at")]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePresetInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub layout: String,
+    pub nodes: Vec<PresetNode>,
+    #[serde(default, alias = "broadcast_on_launch")]
+    pub broadcast_on_launch: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnownHost {
     pub address: String,
     pub port: u16,
@@ -263,6 +301,8 @@ pub struct BackupBundle {
     pub known_hosts: Vec<KnownHost>,
     #[serde(default)]
     pub tombstones: Vec<Tombstone>,
+    #[serde(default)]
+    pub workspace_presets: Vec<WorkspacePreset>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,6 +314,7 @@ pub struct ImportSummary {
     pub snippets: usize,
     pub known_hosts: usize,
     pub known_hosts_conflicts: usize,
+    pub workspace_presets: usize,
     pub vault_meta_restored: bool,
     pub safety_snapshot_path: Option<String>,
 }

@@ -138,6 +138,39 @@ export interface GeneratedKeyPair {
   public_key_openssh: string;
 }
 
+export type PresetLayoutType =
+  | "split-vertical"
+  | "split-horizontal"
+  | "grid-4"
+  | "split-1-2"
+  | "split-2-1"
+  | "triple-column";
+
+export interface PresetNode {
+  paneIndex: number;
+  hostId: string;
+  label?: string;
+}
+
+export interface WorkspacePreset {
+  id: string;
+  name: string;
+  description?: string;
+  layout: PresetLayoutType;
+  nodes: PresetNode[];
+  broadcastOnLaunch?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspacePresetInput {
+  name: string;
+  description?: string;
+  layout: PresetLayoutType;
+  nodes: PresetNode[];
+  broadcastOnLaunch?: boolean;
+}
+
 export interface ImportSummary {
   folders: number;
   credentials: number;
@@ -146,6 +179,7 @@ export interface ImportSummary {
   snippets: number;
   known_hosts: number;
   known_hosts_conflicts: number;
+  workspace_presets?: number;
   vault_meta_restored: boolean;
   safety_snapshot_path: string | null;
 }
@@ -262,6 +296,12 @@ export const api = {
   saveSnippet: (input: SnippetInput, snippetId?: string) =>
     invoke<Snippet>("snippet_save", { input, snippetId: snippetId ?? null }),
   deleteSnippet: (id: string) => invoke<void>("snippet_delete", { id }),
+
+  // Workspaces & Layout Presets
+  listWorkspacePresets: () => invoke<WorkspacePreset[]>("workspace_preset_list"),
+  saveWorkspacePreset: (input: WorkspacePresetInput, presetId?: string) =>
+    invoke<WorkspacePreset>("workspace_preset_save", { input, presetId: presetId ?? null }),
+  deleteWorkspacePreset: (id: string) => invoke<void>("workspace_preset_delete", { id }),
 
   // Ping / Latency
   pingHost: (address: string, port: number) =>

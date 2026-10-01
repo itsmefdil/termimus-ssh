@@ -8,6 +8,7 @@ import { useKeychainStore } from "../../stores/useKeychainStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { api } from "../../lib/api";
 
 export function VaultModal() {
@@ -148,6 +149,7 @@ export function VaultModal() {
       useSnippetStore.getState().refresh();
       useTunnelStore.getState().refresh();
       useKnownHostsStore.getState().refresh();
+      useWorkspaceStore.getState().refresh();
     } catch (err) {
       setLocalError(String(err));
       // Refresh vault status in case import succeeded but unlock failed
