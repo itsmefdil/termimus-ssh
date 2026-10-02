@@ -128,12 +128,8 @@ pub fn vault_keyring_save(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Try to load the derived key from the OS keyring and unlock the vault
-/// silently. Returns `true` if successful, `false` if the keyring has no
-/// stored key (e.g. first run or keyring cleared). Hard errors (keyring
-/// daemon unavailable) are surfaced as `Err`.
-#[tauri::command]
-pub fn vault_keyring_unlock(state: State<AppState>) -> Result<bool, String> {
+/// Internal helper to unlock the vault from a stored OS Keyring entry.
+pub(crate) fn unlock_from_keyring_internal(state: &AppState) -> Result<bool, String> {
     let entry = KeyringEntry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring init failed: {e}"))?;
 
@@ -176,6 +172,59 @@ pub fn vault_keyring_unlock(state: State<AppState>) -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+/// Try to load the derived key from the OS keyring and unlock the vault
+/// silently. Returns `true` if successful, `false` if the keyring has no
+/// stored key (e.g. first run or keyring cleared). Hard errors (keyring
+/// daemon unavailable) are surfaced as `Err`.
+#[tauri::command]
+pub fn vault_keyring_unlock(state: State<AppState>) -> Result<bool, String> {
+    unlock_from_keyring_internal(&state)
+}
+
+/// Check if a vault key is currently stored in the OS keyring.
+#[tauri::command]
+pub fn vault_keyring_has_key() -> Result<bool, String> {
+    let entry = KeyringEntry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| format!("Keyring init failed: {e}"))?;
+    match entry.get_password() {
+        Ok(_) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(format!("Keyring read failed: {e}")),
+    }
+}
+
+/// Check whether biometric hardware (e.g. Touch ID on macOS) is supported and enrolled.
+#[tauri::command]
+pub fn vault_biometric_supported() -> bool {
+    crate::biometric::is_supported()
+}
+
+/// Authenticate with biometric hardware (Touch ID) and unlock the vault
+/// using the key persisted in the OS keyring.
+#[tauri::command]
+pub async fn vault_biometric_unlock(state: State<'_, AppState>) -> Result<bool, String> {
+    if !crate::biometric::is_supported() {
+        return Err("Biometric authentication is not supported or enrolled on this device.".to_string());
+    }
+
+    let has_key = vault_keyring_has_key().unwrap_or(false);
+    if !has_key {
+        return Err("No saved vault key found in OS Keyring. Please unlock with master password first to enable biometric unlock.".to_string());
+    }
+
+    let authenticated = tokio::task::spawn_blocking(|| {
+        crate::biometric::authenticate("Unlock Termimus Vault")
+    })
+    .await
+    .map_err(|e| format!("Biometric auth task error: {e}"))??;
+
+    if !authenticated {
+        return Ok(false);
+    }
+
+    unlock_from_keyring_internal(&state)
 }
 
 /// Remove the stored key from the OS keyring (when user disables the feature

@@ -161,11 +161,13 @@ export function SettingsView() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function SecurityVaultTab() {
-  const { isUnlocked, isInitialized, lock: lockVault, refresh: refreshVault } = useVaultStore();
-  const { useOsKeyring, setUseOsKeyring, autoLockPolicy, setAutoLockPolicy } = useSettingsStore();
+  const { isUnlocked, isInitialized, lock: lockVault, refresh: refreshVault, isBiometricSupported } = useVaultStore();
+  const { useOsKeyring, setUseOsKeyring, useBiometrics, setUseBiometrics, autoLockPolicy, setAutoLockPolicy } = useSettingsStore();
 
   const [keyringLoading, setKeyringLoading] = useState(false);
   const [keyringError, setKeyringError] = useState<string | null>(null);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [biometricError, setBiometricError] = useState<string | null>(null);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   async function handleToggleKeyring(enable: boolean) {
@@ -190,6 +192,27 @@ function SecurityVaultTab() {
     }
   }
 
+  async function handleToggleBiometric(enable: boolean) {
+    setBiometricError(null);
+    setBiometricLoading(true);
+    try {
+      if (enable) {
+        if (!isUnlocked) {
+          setBiometricError("Please unlock the vault first to enable biometric unlock.");
+          return;
+        }
+        await api.saveVaultKeyring();
+        setUseBiometrics(true);
+      } else {
+        setUseBiometrics(false);
+      }
+    } catch (e) {
+      setBiometricError(`Biometric setup error: ${String(e)}`);
+    } finally {
+      setBiometricLoading(false);
+    }
+  }
+
   function handleResetVault() {
     useConfirmStore.getState().confirm({
       title: "Reset Entire Vault?",
@@ -201,6 +224,7 @@ function SecurityVaultTab() {
         try {
           await api.resetVault();
           setUseOsKeyring(false);
+          setUseBiometrics(false);
           await refreshVault();
         } catch (e) {
           alert(`Failed to reset vault: ${e}`);
@@ -277,11 +301,50 @@ function SecurityVaultTab() {
         </div>
 
         <div className="divide-y divide-[var(--border)] text-xs">
-          {/* A. OS Keyring Integration */}
+          {/* A. Biometric (Touch ID) Authentication */}
           <div className="p-5 flex items-start justify-between gap-6">
             <div className="space-y-1">
               <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
-                <Fingerprint size={16} className="text-[var(--primary)]" />
+                <Fingerprint size={16} className="text-[var(--accent)]" />
+                <span>Biometric Unlock (Touch ID)</span>
+                {isBiometricSupported && (
+                  <span className="rounded-full bg-[var(--primary)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--primary)]">
+                    Available
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                Unlock your vault securely using Touch ID sensor without entering your master password every time.
+                {!isBiometricSupported && (
+                  <span className="block text-[var(--warning)] font-medium mt-1">
+                    Touch ID / Biometric sensor not detected on this machine.
+                  </span>
+                )}
+              </p>
+              {biometricError && (
+                <p className="text-[11px] text-[var(--danger)] flex items-center gap-1.5 pt-1.5 font-medium">
+                  <AlertTriangle size={13} /> {biometricError}
+                </p>
+              )}
+            </div>
+
+            <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+              <input
+                type="checkbox"
+                checked={useBiometrics}
+                disabled={biometricLoading || !isInitialized || !isBiometricSupported}
+                onChange={(e) => handleToggleBiometric(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-5.5 bg-[var(--surface-container)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-[var(--accent)]"></div>
+            </label>
+          </div>
+
+          {/* B. OS Keyring Integration */}
+          <div className="p-5 flex items-start justify-between gap-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">
+                <KeyRound size={16} className="text-[var(--primary)]" />
                 <span>Remember on this device (OS Keyring)</span>
               </div>
               <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">

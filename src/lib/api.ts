@@ -194,6 +194,9 @@ export const api = {
   saveVaultKeyring: () => invoke<void>("vault_keyring_save"),
   unlockVaultKeyring: () => invoke<boolean>("vault_keyring_unlock"),
   clearVaultKeyring: () => invoke<void>("vault_keyring_clear"),
+  hasVaultKeyringKey: () => invoke<boolean>("vault_keyring_has_key"),
+  isVaultBiometricSupported: () => invoke<boolean>("vault_biometric_supported"),
+  unlockVaultBiometric: () => invoke<boolean>("vault_biometric_unlock"),
   changeVaultPassword: (oldPassword: string, newPassword: string) =>
     invoke<void>("vault_change_password", { oldPassword, newPassword }),
   resetVault: () => invoke<void>("vault_reset"),

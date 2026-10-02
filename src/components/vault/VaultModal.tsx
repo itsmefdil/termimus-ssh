@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Lock, ShieldCheck, KeyRound, Cloud, Server, Eye, EyeOff } from "lucide-react";
+import { Lock, ShieldCheck, KeyRound, Cloud, Server, Eye, EyeOff, Fingerprint } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -12,7 +13,8 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { api } from "../../lib/api";
 
 export function VaultModal() {
-  const { isInitialized, isUnlocked, setup, unlock, refresh, error } = useVaultStore();
+  const { isInitialized, isUnlocked, setup, unlock, unlockWithBiometric, isBiometricSupported, refresh, error } = useVaultStore();
+  const { useBiometrics } = useSettingsStore();
   const [setupMode, setSetupMode] = useState<"new" | "sync">("new");
 
   // New Vault state
@@ -29,7 +31,23 @@ export function VaultModal() {
   const [showSyncMasterPassword, setShowSyncMasterPassword] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [biometricUnlocking, setBiometricUnlocking] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  async function handleBiometricUnlock() {
+    setLocalError(null);
+    setBiometricUnlocking(true);
+    try {
+      const success = await unlockWithBiometric();
+      if (!success) {
+        setLocalError("Biometric authentication was cancelled or not recognized.");
+      }
+    } catch (err) {
+      setLocalError(String(err));
+    } finally {
+      setBiometricUnlocking(false);
+    }
+  }
 
   // Clear credentials whenever the vault locks or unlocks
   useEffect(() => {
@@ -236,6 +254,28 @@ export function VaultModal() {
         {/* Form: Standard Setup / Unlock */}
         {(isInitialized || setupMode === "new") && (
           <form onSubmit={handleSubmitNew} className="space-y-4">
+            {isInitialized && isBiometricSupported && useBiometrics && (
+              <div className="space-y-3 pb-1">
+                <button
+                  type="button"
+                  disabled={biometricUnlocking || submitting}
+                  onClick={handleBiometricUnlock}
+                  className="w-full flex items-center justify-center gap-2.5 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/10 hover:bg-[var(--primary)]/18 text-[var(--primary)] py-2.5 px-4 text-sm font-semibold transition shadow-sm hover:shadow active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+                >
+                  <Fingerprint size={18} className={biometricUnlocking ? "animate-pulse" : ""} />
+                  <span>{biometricUnlocking ? "Waiting for Touch ID..." : "Unlock with Touch ID"}</span>
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                  <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-medium">
+                    or enter master password
+                  </span>
+                  <div className="h-px flex-1 bg-[var(--border)]" />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--text-muted)]">
                 Master Password
@@ -243,7 +283,7 @@ export function VaultModal() {
               <div className="relative">
                 <input
                   type="password"
-                  autoFocus
+                  autoFocus={!useBiometrics}
                   autoComplete="off"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

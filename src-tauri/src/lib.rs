@@ -1,3 +1,4 @@
+pub mod biometric;
 pub mod commands;
 pub mod db;
 pub mod sftp;
@@ -37,6 +38,9 @@ pub fn run() {
             commands::vault_keyring_save,
             commands::vault_keyring_unlock,
             commands::vault_keyring_clear,
+            commands::vault_keyring_has_key,
+            commands::vault_biometric_supported,
+            commands::vault_biometric_unlock,
             commands::vault_change_password,
             commands::vault_reset,
             commands::host_list,

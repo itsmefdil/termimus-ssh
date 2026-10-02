@@ -18,8 +18,10 @@ export const AUTO_LOCK_LABELS: Record<AutoLockPolicy, string> = {
 
 interface SettingsState {
   useOsKeyring: boolean;
+  useBiometrics: boolean;
   autoLockPolicy: AutoLockPolicy;
   setUseOsKeyring: (v: boolean) => void;
+  setUseBiometrics: (v: boolean) => void;
   setAutoLockPolicy: (v: AutoLockPolicy) => void;
 }
 
@@ -27,8 +29,10 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       useOsKeyring: false,
+      useBiometrics: false,
       autoLockPolicy: "on_close",
       setUseOsKeyring: (v) => set({ useOsKeyring: v }),
+      setUseBiometrics: (v) => set({ useBiometrics: v }),
       setAutoLockPolicy: (v) => set({ autoLockPolicy: v }),
     }),
     {
