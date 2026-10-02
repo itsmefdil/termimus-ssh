@@ -73,6 +73,20 @@ export interface VaultStatus {
   is_unlocked: boolean;
 }
 
+export interface ConnectedDevice {
+  id: string;
+  name: string;
+  last_sync_at: string;
+  created_at: string;
+}
+
+export interface SyncTestResult {
+  ok: boolean;
+  serverVersion?: string;
+  revision?: number;
+  error?: string;
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -343,4 +357,36 @@ export const api = {
     invoke<string>("backup_export", { passphrase: passphrase ?? null }),
   importBackup: (backupJson: string, replaceAll: boolean, passphrase?: string) =>
     invoke<ImportSummary>("backup_import", { backupJson, replaceAll, passphrase: passphrase ?? null }),
+
+  // Sync Relay (Native Rust HTTP, avoids WebKitGTK mixed-content/CORS blocks)
+  syncTestConnection: (serverUrl: string, authToken?: string) =>
+    invoke<SyncTestResult>("sync_test_connection", {
+      serverUrl,
+      authToken: authToken?.trim() || null,
+    }),
+  syncPush: (
+    serverUrl: string,
+    syncPassword: string,
+    deviceId: string,
+    deviceName: string,
+    authToken?: string
+  ) =>
+    invoke<number>("sync_push", {
+      serverUrl,
+      syncPassword,
+      deviceId,
+      deviceName,
+      authToken: authToken?.trim() || null,
+    }),
+  syncPull: (serverUrl: string, syncPassword: string, authToken?: string) =>
+    invoke<ImportSummary>("sync_pull", {
+      serverUrl,
+      syncPassword,
+      authToken: authToken?.trim() || null,
+    }),
+  syncGetDevices: (serverUrl: string, authToken?: string) =>
+    invoke<ConnectedDevice[]>("sync_get_devices", {
+      serverUrl,
+      authToken: authToken?.trim() || null,
+    }),
 };

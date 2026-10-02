@@ -99,41 +99,22 @@ export const useSyncStore = create<SyncState>()(
         }
 
         try {
-          const res = await fetch(`${serverUrl}/health`);
-          if (!res.ok) {
-            return { ok: false, error: `Server returned HTTP ${res.status}` };
+          const res = await api.syncTestConnection(serverUrl, authToken);
+          if (res.ok) {
+            set({
+              syncStatus: "connected",
+              lastError: null,
+              latestServerVersion: res.revision ?? 0,
+            });
+            return {
+              ok: true,
+              version: res.serverVersion,
+              revision: res.revision,
+            };
           }
-          const health = await res.json();
-
-          // Check sync status with auth
-          const headers: HeadersInit = {};
-          if (authToken) {
-            headers["Authorization"] = `Bearer ${authToken}`;
-          }
-
-          const statusRes = await fetch(`${serverUrl}/api/v1/sync/status`, { headers });
-          if (!statusRes.ok) {
-            if (statusRes.status === 401) {
-              return {
-                ok: false,
-                error: "Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)",
-              };
-            }
-            return { ok: false, error: `Sync endpoint returned HTTP ${statusRes.status}` };
-          }
-
-          const statusData = await statusRes.json();
-          set({
-            syncStatus: "connected",
-            lastError: null,
-            latestServerVersion: statusData.latest_version ?? 0,
-          });
-
-          return {
-            ok: true,
-            version: health.version,
-            revision: statusData.latest_version,
-          };
+          const errMsg = res.error || "Connection failed";
+          set({ syncStatus: "error", lastError: errMsg });
+          return { ok: false, error: errMsg };
         } catch (e) {
           const errMsg = String(e);
           set({ syncStatus: "error", lastError: errMsg });
@@ -154,43 +135,24 @@ export const useSyncStore = create<SyncState>()(
         set({ syncStatus: "syncing", lastError: null });
 
         try {
-          // Export full database into an encrypted envelope using the sync password
-          const encryptedBlob = await api.exportBackup(cleanPassword);
+          // Native Rust HTTP push: bypasses WebKitGTK active mixed-content and CORS blocks entirely
+          const version = await api.syncPush(
+            serverUrl,
+            cleanPassword,
+            deviceId,
+            deviceName,
+            authToken
+          );
 
-          const headers: HeadersInit = { "Content-Type": "application/json" };
-          if (authToken) {
-            headers["Authorization"] = `Bearer ${authToken}`;
-          }
-
-          const res = await fetch(`${serverUrl}/api/v1/sync/bundle`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              device_id: deviceId,
-              device_name: deviceName,
-              encrypted_blob: encryptedBlob,
-            }),
-          });
-
-          if (!res.ok) {
-            if (res.status === 401) {
-              throw new Error("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)");
-            }
-            const errBody = await res.json().catch(() => ({}));
-            throw new Error(errBody.error || `Server returned HTTP ${res.status}`);
-          }
-
-          const data = await res.json();
           const now = new Date().toISOString();
-
           set({
             syncStatus: "connected",
             lastSyncAt: now,
-            latestServerVersion: data.version,
+            latestServerVersion: version,
             lastError: null,
           });
 
-          return data.version;
+          return version;
         } catch (e) {
           const msg = String(e);
           set({ syncStatus: "error", lastError: msg });
@@ -205,37 +167,8 @@ export const useSyncStore = create<SyncState>()(
         set({ syncStatus: "syncing", lastError: null });
 
         try {
-          const headers: HeadersInit = {};
-          if (authToken) {
-            headers["Authorization"] = `Bearer ${authToken}`;
-          }
-
-          const res = await fetch(`${serverUrl}/api/v1/sync/bundle`, { headers });
-          if (!res.ok) {
-            if (res.status === 401) {
-              throw new Error("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)");
-            }
-            const errBody = await res.json().catch(() => ({}));
-            throw new Error(errBody.error || `Server returned HTTP ${res.status}`);
-          }
-
-          const data = await res.json();
-          const encryptedBlob = data.encrypted_blob;
-          if (!encryptedBlob) {
-            throw new Error("No sync data found on server");
-          }
-
-          const cleanPassword = syncPassword.trim();
-          if (!cleanPassword) {
-            throw new Error("Sync Passphrase is required to decrypt the incoming sync bundle.");
-          }
-
-          // Import and merge into local database safely (replace_all = false preserves TOFU known hosts)
-          const summary = await api.importBackup(
-            encryptedBlob,
-            false,
-            cleanPassword
-          );
+          // Native Rust HTTP pull: bypasses WebKitGTK mixed-content and CORS blocks entirely
+          const summary = await api.syncPull(serverUrl, syncPassword, authToken);
 
           // Refresh UI stores after data import
           useHostStore.getState().refresh();
@@ -249,7 +182,6 @@ export const useSyncStore = create<SyncState>()(
           set({
             syncStatus: "connected",
             lastSyncAt: now,
-            latestServerVersion: data.version,
             lastError: null,
           });
 
@@ -265,14 +197,7 @@ export const useSyncStore = create<SyncState>()(
         const { serverUrl, authToken } = get();
         if (!serverUrl) return [];
         try {
-          const headers: HeadersInit = {};
-          if (authToken) {
-            headers["Authorization"] = `Bearer ${authToken}`;
-          }
-          const res = await fetch(`${serverUrl}/api/v1/sync/devices`, { headers });
-          if (!res.ok) return [];
-          const data = await res.json();
-          return (data.devices as ConnectedDevice[]) || [];
+          return await api.syncGetDevices(serverUrl, authToken);
         } catch {
           return [];
         }

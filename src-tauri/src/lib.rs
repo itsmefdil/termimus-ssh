@@ -105,6 +105,10 @@ pub fn run() {
             commands::known_host_delete,
             commands::backup_export,
             commands::backup_import,
+            commands::sync_test_connection,
+            commands::sync_push,
+            commands::sync_pull,
+            commands::sync_get_devices,
         ])
         .run(tauri::generate_context!())
         .expect("error while running termimus application");

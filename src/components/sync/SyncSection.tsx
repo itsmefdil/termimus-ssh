@@ -74,8 +74,10 @@ export function SyncSection() {
   useEffect(() => {
     if (serverUrl) {
       loadDevices();
+      // Silently test connection in background to update status banner to CONNECTED
+      testConnection().catch(() => {});
     }
-  }, [serverUrl, loadDevices]);
+  }, [serverUrl, loadDevices, testConnection]);
 
   async function handleTest() {
     setTesting(true);
@@ -167,25 +169,37 @@ export function SyncSection() {
                   className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium ${
                     syncStatus === "connected"
                       ? "bg-[var(--success)]/15 text-[var(--success)] border border-[var(--success)]/20"
+                      : syncStatus === "syncing"
+                      ? "bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/20"
                       : syncStatus === "error"
                       ? "bg-[var(--danger)]/15 text-[var(--danger)] border border-[var(--danger)]/20"
-                      : "bg-[var(--surface-high)] text-[var(--text-muted)] border border-[var(--border)]"
+                      : !serverUrl || !syncPassword.trim()
+                      ? "bg-[var(--surface-high)] text-[var(--text-muted)] border border-[var(--border)]"
+                      : "bg-[var(--surface-container)] text-[var(--text-secondary)] border border-[var(--border)]"
                   }`}
                 >
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       syncStatus === "connected"
                         ? "bg-[var(--success)] animate-pulse"
+                        : syncStatus === "syncing"
+                        ? "bg-[var(--primary)] animate-pulse"
                         : syncStatus === "error"
                         ? "bg-[var(--danger)]"
-                        : "bg-[var(--text-muted)]"
+                        : !serverUrl || !syncPassword.trim()
+                        ? "bg-[var(--text-muted)]"
+                        : "bg-[var(--primary)]"
                     }`}
                   />
                   {syncStatus === "connected"
                     ? "CONNECTED"
+                    : syncStatus === "syncing"
+                    ? "SYNCING..."
                     : syncStatus === "error"
                     ? "CONNECTION ERROR"
-                    : "NOT CONFIGURED"}
+                    : !serverUrl || !syncPassword.trim()
+                    ? "NOT CONFIGURED"
+                    : "READY"}
                 </span>
               </div>
               <p className="text-xs text-[var(--text-muted)] mt-1">

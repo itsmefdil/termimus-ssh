@@ -1,6 +1,6 @@
 [package]
 name = "termimus"
-version = "0.6.0"
+version = "0.6.1"
 description = "Termimus - Self-hosted SSH & Server Manager"
 authors = ["noma"]
 edition = "2021"
@@ -39,6 +39,7 @@ anyhow = "1.0.104"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.4.0"
 portable-pty = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

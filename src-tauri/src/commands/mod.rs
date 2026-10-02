@@ -7,7 +7,7 @@ use crate::tunnel::TunnelManager;
 use crate::vault::VaultManager;
 use chrono::Utc;
 use keyring::Entry as KeyringEntry;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -1470,4 +1470,277 @@ pub fn backup_import(
     }
 
     Ok(summary)
+}
+
+// ── Self-Hosted Sync Relay (native HTTP client, bypasses WebView CORS/mixed-content) ─────
+//
+// All sync network I/O runs through `reqwest` in the Rust backend instead of the
+// webview's `fetch()`. WebKitGTK (Linux) blocks POST requests with a body from a
+// secure `tauri://` origin to a plaintext `http://` server as "active mixed
+// content" (surfacing as `TypeError: Load failed` in the frontend), even though
+// GET requests are tolerated. Routing through Rust sidesteps browser-engine CORS
+// and mixed-content rules entirely — the request is a plain OS-level socket.
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncTestResult {
+    pub ok: bool,
+    pub server_version: Option<String>,
+    pub revision: Option<i64>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HealthResponse {
+    version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SyncStatusResponse {
+    latest_version: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConnectedDevice {
+    pub id: String,
+    pub name: String,
+    pub last_sync_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DevicesResponse {
+    #[serde(default)]
+    devices: Vec<ConnectedDevice>,
+}
+
+#[derive(Debug, Serialize)]
+struct PushBundleRequest<'a> {
+    device_id: &'a str,
+    device_name: &'a str,
+    encrypted_blob: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PushBundleResponse {
+    version: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetBundleResponse {
+    encrypted_blob: Option<String>,
+}
+
+fn sync_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to initialize HTTP client: {e}"))
+}
+
+fn apply_auth_header(
+    builder: reqwest::RequestBuilder,
+    auth_token: &Option<String>,
+) -> reqwest::RequestBuilder {
+    match auth_token {
+        Some(t) if !t.trim().is_empty() => builder.bearer_auth(t.trim()),
+        _ => builder,
+    }
+}
+
+/// Mirrors the frontend's `testConnection()`: GET /health then GET /api/v1/sync/status.
+#[tauri::command]
+pub async fn sync_test_connection(
+    server_url: String,
+    auth_token: Option<String>,
+) -> Result<SyncTestResult, String> {
+    let base = server_url.trim_end_matches('/');
+    let client = sync_http_client()?;
+
+    let health_res = match client.get(format!("{base}/health")).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(SyncTestResult {
+                ok: false,
+                server_version: None,
+                revision: None,
+                error: Some(format!("Failed to reach server: {e}")),
+            })
+        }
+    };
+
+    if !health_res.status().is_success() {
+        return Ok(SyncTestResult {
+            ok: false,
+            server_version: None,
+            revision: None,
+            error: Some(format!("Server returned HTTP {}", health_res.status())),
+        });
+    }
+
+    let health: HealthResponse = health_res.json().await.unwrap_or(HealthResponse { version: None });
+
+    let status_req = apply_auth_header(client.get(format!("{base}/api/v1/sync/status")), &auth_token);
+    let status_res = match status_req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(SyncTestResult {
+                ok: false,
+                server_version: health.version,
+                revision: None,
+                error: Some(format!("Failed to reach sync endpoint: {e}")),
+            })
+        }
+    };
+
+    let status_code = status_res.status();
+    if !status_code.is_success() {
+        let error = if status_code.as_u16() == 401 {
+            "Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)".to_string()
+        } else {
+            format!("Sync endpoint returned HTTP {status_code}")
+        };
+        return Ok(SyncTestResult {
+            ok: false,
+            server_version: health.version,
+            revision: None,
+            error: Some(error),
+        });
+    }
+
+    let status: SyncStatusResponse = status_res
+        .json()
+        .await
+        .unwrap_or(SyncStatusResponse { latest_version: None });
+
+    Ok(SyncTestResult {
+        ok: true,
+        server_version: health.version,
+        revision: status.latest_version,
+        error: None,
+    })
+}
+
+/// Exports the local database as an encrypted E2EE envelope and POSTs it to the
+/// relay. Returns the new server-side revision number.
+#[tauri::command]
+pub async fn sync_push(
+    state: State<'_, AppState>,
+    server_url: String,
+    auth_token: Option<String>,
+    sync_password: String,
+    device_id: String,
+    device_name: String,
+) -> Result<u64, String> {
+    let password = sync_password.trim();
+    if password.is_empty() {
+        return Err("Sync Passphrase is required. Termimus enforces zero-knowledge E2EE encryption before uploading to the relay.".to_string());
+    }
+
+    let encrypted_blob = backup_export(state, Some(password.to_string()))?;
+
+    let base = server_url.trim_end_matches('/');
+    let client = sync_http_client()?;
+
+    let req = apply_auth_header(
+        client.post(format!("{base}/api/v1/sync/bundle")).json(&PushBundleRequest {
+            device_id: &device_id,
+            device_name: &device_name,
+            encrypted_blob,
+        }),
+        &auth_token,
+    );
+
+    let res = req
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach sync server: {e}"))?;
+
+    let status = res.status();
+    if !status.is_success() {
+        if status.as_u16() == 401 {
+            return Err("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)".to_string());
+        }
+        let err_body: ErrorResponse = res.json().await.unwrap_or(ErrorResponse { error: None });
+        return Err(err_body.error.unwrap_or_else(|| format!("Server returned HTTP {status}")));
+    }
+
+    let body: PushBundleResponse = res
+        .json()
+        .await
+        .map_err(|e| format!("Invalid response from server: {e}"))?;
+
+    Ok(body.version)
+}
+
+/// Fetches the latest encrypted bundle from the relay, decrypts it, and merges
+/// it into the local database (preserving locally-recorded TOFU known hosts).
+#[tauri::command]
+pub async fn sync_pull(
+    state: State<'_, AppState>,
+    server_url: String,
+    auth_token: Option<String>,
+    sync_password: String,
+) -> Result<ImportSummary, String> {
+    let base = server_url.trim_end_matches('/');
+    let client = sync_http_client()?;
+
+    let req = apply_auth_header(client.get(format!("{base}/api/v1/sync/bundle")), &auth_token);
+    let res = req
+        .send()
+        .await
+        .map_err(|e| format!("Failed to reach sync server: {e}"))?;
+
+    let status = res.status();
+    if !status.is_success() {
+        if status.as_u16() == 401 {
+            return Err("Authentication failed: invalid or missing Auth Token (configured via TERMIMUS_AUTH_TOKEN on server)".to_string());
+        }
+        let err_body: ErrorResponse = res.json().await.unwrap_or(ErrorResponse { error: None });
+        return Err(err_body.error.unwrap_or_else(|| format!("Server returned HTTP {status}")));
+    }
+
+    let body: GetBundleResponse = res
+        .json()
+        .await
+        .map_err(|e| format!("Invalid response from server: {e}"))?;
+
+    let encrypted_blob = body
+        .encrypted_blob
+        .ok_or_else(|| "No sync data found on server".to_string())?;
+
+    let password = sync_password.trim();
+    if password.is_empty() {
+        return Err("Sync Passphrase is required to decrypt the incoming sync bundle.".to_string());
+    }
+
+    backup_import(state, encrypted_blob, false, Some(password.to_string()))
+}
+
+/// Lists devices that have pushed revisions to the relay.
+#[tauri::command]
+pub async fn sync_get_devices(
+    server_url: String,
+    auth_token: Option<String>,
+) -> Result<Vec<ConnectedDevice>, String> {
+    let base = server_url.trim_end_matches('/');
+    let client = sync_http_client()?;
+
+    let req = apply_auth_header(client.get(format!("{base}/api/v1/sync/devices")), &auth_token);
+    let res = match req.send().await {
+        Ok(r) => r,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    if !res.status().is_success() {
+        return Ok(Vec::new());
+    }
+
+    let body: DevicesResponse = res.json().await.unwrap_or(DevicesResponse { devices: Vec::new() });
+    Ok(body.devices)
 }
