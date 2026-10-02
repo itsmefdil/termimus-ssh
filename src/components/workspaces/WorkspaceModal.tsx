@@ -257,7 +257,7 @@ export function WorkspaceModal() {
               <label className="block text-xs font-medium text-[var(--text-secondary)]">
                 Assign Hosts to Panes
               </label>
-              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
+              <div className="flex flex-col gap-2.5">
                 {Array.from({ length: getPaneCountForLayout(layout) }).map((_, idx) => (
                   <div key={idx} className="flex flex-col gap-1">
                     <label className="text-[11px] font-mono text-[var(--text-muted)] flex items-center justify-between">

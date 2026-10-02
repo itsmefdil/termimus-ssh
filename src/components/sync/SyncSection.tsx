@@ -275,6 +275,7 @@ export function SyncSection() {
                   type="text"
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
+                  onBlur={() => setServerUrl(serverUrl.trim().replace(/\/+$/, ""))}
                   placeholder="e.g. http://192.168.1.50:8080 or https://sync.example.com"
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
                 />

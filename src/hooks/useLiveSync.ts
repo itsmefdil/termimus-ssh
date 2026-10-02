@@ -19,7 +19,10 @@ export function useLiveSync() {
   useEffect(() => {
     if (!autoSync || !serverUrl) return;
 
-    let wsUrl = serverUrl.replace(/^http/, "ws");
+    const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
+    if (!cleanUrl) return;
+
+    let wsUrl = cleanUrl.replace(/^http/, "ws");
     if (authToken) {
       wsUrl += `/api/v1/sync/ws?token=${encodeURIComponent(authToken)}`;
     } else {

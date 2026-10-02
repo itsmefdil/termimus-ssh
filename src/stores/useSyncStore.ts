@@ -69,7 +69,7 @@ export const useSyncStore = create<SyncState>()(
       syncStatus: "idle",
       lastError: null,
 
-      setServerUrl: (url) => set({ serverUrl: url.trim().replace(/\/+$/, "") }),
+      setServerUrl: (url) => set({ serverUrl: url }),
       setAuthToken: (token) => set({ authToken: token.trim() }),
       setSyncPassword: (pw) => set({ syncPassword: pw }),
       setDeviceName: (name) => set({ deviceName: name.trim() }),
@@ -94,12 +94,13 @@ export const useSyncStore = create<SyncState>()(
 
       testConnection: async () => {
         const { serverUrl, authToken } = get();
-        if (!serverUrl) {
+        const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
+        if (!cleanUrl) {
           return { ok: false, error: "Server URL is required" };
         }
 
         try {
-          const res = await api.syncTestConnection(serverUrl, authToken);
+          const res = await api.syncTestConnection(cleanUrl, authToken);
           if (res.ok) {
             set({
               syncStatus: "connected",
@@ -124,7 +125,8 @@ export const useSyncStore = create<SyncState>()(
 
       push: async () => {
         const { serverUrl, authToken, syncPassword, deviceName, getDeviceId } = get();
-        if (!serverUrl) throw new Error("Server URL is not configured");
+        const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
+        if (!cleanUrl) throw new Error("Server URL is not configured");
 
         const cleanPassword = syncPassword.trim();
         if (!cleanPassword) {
@@ -137,7 +139,7 @@ export const useSyncStore = create<SyncState>()(
         try {
           // Native Rust HTTP push: bypasses WebKitGTK active mixed-content and CORS blocks entirely
           const version = await api.syncPush(
-            serverUrl,
+            cleanUrl,
             cleanPassword,
             deviceId,
             deviceName,
@@ -162,13 +164,14 @@ export const useSyncStore = create<SyncState>()(
 
       pull: async () => {
         const { serverUrl, authToken, syncPassword } = get();
-        if (!serverUrl) throw new Error("Server URL is not configured");
+        const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
+        if (!cleanUrl) throw new Error("Server URL is not configured");
 
         set({ syncStatus: "syncing", lastError: null });
 
         try {
           // Native Rust HTTP pull: bypasses WebKitGTK mixed-content and CORS blocks entirely
-          const summary = await api.syncPull(serverUrl, syncPassword, authToken);
+          const summary = await api.syncPull(cleanUrl, syncPassword, authToken);
 
           // Refresh UI stores after data import
           useHostStore.getState().refresh();
@@ -195,9 +198,10 @@ export const useSyncStore = create<SyncState>()(
 
       getDevices: async () => {
         const { serverUrl, authToken } = get();
-        if (!serverUrl) return [];
+        const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
+        if (!cleanUrl) return [];
         try {
-          return await api.syncGetDevices(serverUrl, authToken);
+          return await api.syncGetDevices(cleanUrl, authToken);
         } catch {
           return [];
         }
