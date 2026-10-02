@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Zap, Server, Plus, X, Terminal, Laptop } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useVaultStore } from "../../stores/useVaultStore";
 import { Host } from "../../lib/api";
 
 // openSession is a single stable action reference; selecting it directly avoids
@@ -57,6 +58,10 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
 
   async function handleConnectToHost(host: Host) {
     onClose();
+    if (!useVaultStore.getState().isUnlocked) {
+      useVaultStore.getState().openUnlockPrompt();
+      return;
+    }
     await openSession(host);
     onConnect?.();
   }

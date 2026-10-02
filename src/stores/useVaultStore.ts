@@ -5,6 +5,13 @@ import { useSettingsStore } from "./useSettingsStore";
 interface VaultState {
   isInitialized: boolean;
   isUnlocked: boolean;
+  /** Whether the setup/unlock prompt is shown. Cancellable once the vault
+   *  exists; the user can reopen it from Settings > Security & Vault. */
+  isUnlockPromptOpen: boolean;
+  /** Whether the open prompt may be cancelled. The app-startup prompt is
+   *  mandatory (the vault must be unlocked to use the app); prompts raised
+   *  in-session (manual lock, reopened from Settings) are cancellable. */
+  isUnlockPromptDismissable: boolean;
   isLoading: boolean;
   error: string | null;
   isBiometricSupported: boolean;
@@ -13,11 +20,16 @@ interface VaultState {
   unlock: (password: string) => Promise<void>;
   unlockWithBiometric: () => Promise<boolean>;
   lock: () => Promise<void>;
+  autoLock: () => Promise<void>;
+  openUnlockPrompt: () => void;
+  closeUnlockPrompt: () => void;
 }
 
 export const useVaultStore = create<VaultState>((set) => ({
   isInitialized: false,
   isUnlocked: false,
+  isUnlockPromptOpen: true,
+  isUnlockPromptDismissable: false,
   isLoading: true,
   error: null,
   isBiometricSupported: false,
@@ -41,6 +53,7 @@ export const useVaultStore = create<VaultState>((set) => ({
               set({
                 isInitialized: true,
                 isUnlocked: true,
+                isUnlockPromptOpen: false,
                 isLoading: false,
                 error: null,
                 isBiometricSupported: biometricSupported,
@@ -53,13 +66,16 @@ export const useVaultStore = create<VaultState>((set) => ({
         }
       }
 
-      set({
+      set((state) => ({
         isInitialized: status.is_initialized,
         isUnlocked: status.is_unlocked,
+        // A missing vault can only be created through the setup prompt, so
+        // force it open even if the user dismissed the prompt earlier.
+        isUnlockPromptOpen: !status.is_initialized || state.isUnlockPromptOpen,
         isLoading: false,
         error: null,
         isBiometricSupported: biometricSupported,
-      });
+      }));
     } catch (e) {
       set({ isLoading: false, error: String(e) });
     }
@@ -69,7 +85,7 @@ export const useVaultStore = create<VaultState>((set) => ({
     set({ error: null });
     try {
       await api.setupVault(password);
-      set({ isInitialized: true, isUnlocked: true });
+      set({ isInitialized: true, isUnlocked: true, isUnlockPromptOpen: false });
 
       // Auto-save to keyring if the user has keyring or biometrics enabled.
       const { useOsKeyring, useBiometrics } = useSettingsStore.getState();
@@ -90,7 +106,7 @@ export const useVaultStore = create<VaultState>((set) => ({
     set({ error: null });
     try {
       await api.unlockVault(password);
-      set({ isUnlocked: true });
+      set({ isUnlocked: true, isUnlockPromptOpen: false });
 
       // Refresh keyring entry after a successful manual unlock.
       const { useOsKeyring, useBiometrics } = useSettingsStore.getState();
@@ -112,7 +128,7 @@ export const useVaultStore = create<VaultState>((set) => ({
     try {
       const unlocked = await api.unlockVaultBiometric();
       if (unlocked) {
-        set({ isUnlocked: true, error: null });
+        set({ isUnlocked: true, isUnlockPromptOpen: false, error: null });
         return true;
       }
       return false;
@@ -122,8 +138,26 @@ export const useVaultStore = create<VaultState>((set) => ({
     }
   },
 
+  // Manual lock from the UI buttons: the vault locks immediately and the app
+  // returns to normal view. The unlock prompt opens only on demand.
   lock: async () => {
     await api.lockVault();
-    set({ isUnlocked: false });
+    set({ isUnlocked: false, isUnlockPromptOpen: false });
   },
+
+  // System-initiated lock (idle timeout, focus loss): the user is away, so
+  // surface the unlock prompt for when they return. Still cancellable in
+  // session; secrets stay locked either way.
+  autoLock: async () => {
+    await api.lockVault();
+    set({
+      isUnlocked: false,
+      isUnlockPromptOpen: true,
+      isUnlockPromptDismissable: true,
+    });
+  },
+
+  openUnlockPrompt: () =>
+    set({ isUnlockPromptOpen: true, isUnlockPromptDismissable: true }),
+  closeUnlockPrompt: () => set({ isUnlockPromptOpen: false }),
 }));

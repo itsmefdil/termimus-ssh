@@ -26,6 +26,7 @@ import { useSessionStore } from "../../stores/useSessionStore";
 import { useSftpStore } from "../../stores/useSftpStore";
 import { usePingStore } from "../../stores/usePingStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
+import { useVaultStore } from "../../stores/useVaultStore";
 import { FolderModal } from "./FolderModal";
 import { Host, Folder } from "../../lib/api";
 import { DistroBadge } from "./DistroBadge";
@@ -237,6 +238,10 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
 
   const handleConnect = useCallback(
     async (host: Host) => {
+      if (!useVaultStore.getState().isUnlocked) {
+        useVaultStore.getState().openUnlockPrompt();
+        return;
+      }
       onOpenTerminal?.();
       await openSession(host);
     },
@@ -245,6 +250,10 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
 
   const handleConnectSplit = useCallback(
     (host: Host, direction: "row" | "column") => {
+      if (!useVaultStore.getState().isUnlocked) {
+        useVaultStore.getState().openUnlockPrompt();
+        return;
+      }
       onOpenTerminal?.();
       const targetPane = activePaneId ?? "root";
       openSessionInSplit(host, targetPane, direction);
@@ -255,6 +264,10 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
   const handleSftpClick = useCallback(
     async (e: React.MouseEvent, host: Host) => {
       e.stopPropagation();
+      if (!useVaultStore.getState().isUnlocked) {
+        useVaultStore.getState().openUnlockPrompt();
+        return;
+      }
       onOpenSftp();
       await connectRemote(host);
     },
