@@ -11,6 +11,8 @@ import { useShallow } from "zustand/react/shallow";
 import { PaneLeaf } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
+import { getTerminalTheme } from "../../lib/terminalThemes";
 import { XtermView } from "./XtermView";
 import { DropZoneOverlay } from "./DropZoneOverlay";
 
@@ -55,8 +57,35 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
   );
 
   const hosts = useHostStore((s) => s.hosts);
+  const themeId = useTerminalThemeStore((s) => s.themeId);
+  const themeBg = getTerminalTheme(themeId).xterm.background ?? "#0a0e14";
   const isFocused = activePaneId === pane.id;
   const isMaximized = maximizedPaneId === pane.id;
+
+  // Blend the pane header's background/border with the active terminal theme
+  // (instead of a fixed --surface color) so a split layout reads as one
+  // cohesive panel regardless of which theme (dark or light) is active.
+  const isLight = (() => {
+    const c = themeBg.replace("#", "");
+    const r = parseInt(c.slice(0, 2), 16) || 0;
+    const g = parseInt(c.slice(2, 4), 16) || 0;
+    const b = parseInt(c.slice(4, 6), 16) || 0;
+    return (r * 299 + g * 587 + b * 114) / 1000 > 150;
+  })();
+
+  const headerBg = isFocused
+    ? isLight
+      ? "rgba(0, 0, 0, 0.05)"
+      : "rgba(255, 255, 255, 0.06)"
+    : isLight
+      ? "rgba(0, 0, 0, 0.08)"
+      : "rgba(0, 0, 0, 0.28)";
+
+  const headerBorder = isFocused
+    ? "rgba(0, 210, 180, 0.35)"
+    : isLight
+      ? "rgba(0, 0, 0, 0.12)"
+      : "rgba(255, 255, 255, 0.08)";
   const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
 
   // The pane header is only shown when the workspace is actually split into multiple panes.
@@ -130,7 +159,8 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
   return (
     <div
       onClick={() => focusPane(pane.id)}
-      className={`relative flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] transition-all ${
+      style={{ backgroundColor: themeBg }}
+      className={`relative flex h-full w-full flex-col overflow-hidden transition-all ${
         isSplit
           ? isBroadcast
             ? isFocused
@@ -138,18 +168,20 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
               : "ring-1 ring-[var(--primary)]/50"
             : isFocused
               ? "ring-1 ring-[var(--primary)]/70 shadow-sm"
-              : "ring-1 ring-[var(--border)]/40 hover:ring-[var(--border)]"
+              : isLight
+                ? "ring-1 ring-black/15"
+                : "ring-1 ring-white/10"
           : ""
       }`}
     >
-      {/* Pane Header — Only rendered when screen is split into multiple panes */}
+      {/* Pane Header — Cohesively tinted with the active terminal theme */}
       {isSplit && (
         <div
-          className={`flex h-6.5 w-full shrink-0 select-none items-center justify-between border-b px-2 text-xs transition-colors ${
-            isFocused
-              ? "border-[var(--primary)]/30 bg-[var(--surface-container)]"
-              : "border-[var(--border)] bg-[var(--canvas)]"
-          }`}
+          style={{
+            backgroundColor: headerBg,
+            borderBottomColor: headerBorder,
+          }}
+          className="flex h-6.5 w-full shrink-0 select-none items-center justify-between border-b px-2 text-xs transition-colors"
         >
           {/* Left: Server info (or mini-tabs if multiple sessions docked in this single pane) */}
           <div className="flex h-full flex-1 items-center gap-1.5 overflow-x-auto py-0.5 min-w-0">
@@ -175,12 +207,18 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                       handlePointerDownTab(e, tab.id);
                     }}
                     title="Drag to split screen or dock. Middle-click or ✕ to close."
-                    className={`group relative flex h-6 max-w-[160px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded-md px-2 text-[11px] font-mono transition-all select-none ${
+                    className={`group relative flex h-5.5 max-w-[160px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded-md px-2 text-[11px] font-mono transition-all select-none ${
                       isActiveInPane
                         ? isFocused
-                          ? "bg-[var(--surface-high)] text-[var(--text-primary)] border border-[var(--primary)]/40 shadow-xs font-medium"
-                          : "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] font-medium"
-                        : "text-[var(--text-muted)] hover:bg-[var(--surface-container)]/60 hover:text-[var(--text-primary)] border border-transparent"
+                          ? isLight
+                            ? "bg-black/10 text-black border border-[var(--primary)]/50 shadow-2xs font-medium"
+                            : "bg-white/15 text-[var(--text-primary)] border border-[var(--primary)]/40 shadow-2xs font-medium"
+                          : isLight
+                            ? "bg-black/5 text-black/80 border border-black/10 font-medium"
+                            : "bg-white/5 text-[var(--text-primary)] border border-white/10 font-medium"
+                        : isLight
+                          ? "text-black/60 hover:bg-black/5 hover:text-black border border-transparent"
+                          : "text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--text-primary)] border border-transparent"
                     }`}
                   >
                     {tab.connecting ? (
@@ -202,8 +240,8 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                       title="Close tab"
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all cursor-pointer ${
                         isActiveInPane
-                          ? "opacity-60 hover:opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
-                          : "opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:bg-white/10 text-[var(--text-muted)] hover:text-white"
+                          ? "opacity-60 hover:opacity-100 hover:bg-white/15 text-[var(--text-muted)] hover:text-white"
+                          : "opacity-0 group-hover:opacity-70 hover:!opacity-100 hover:bg-white/15 text-[var(--text-muted)] hover:text-white"
                       }`}
                     >
                       <X size={10} strokeWidth={2.2} />
@@ -257,20 +295,26 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
               className={`flex h-5 items-center gap-1 rounded px-1.5 text-xs transition-colors ${
                 isBroadcast
                   ? "bg-[var(--primary)] text-black font-semibold shadow-sm hover:opacity-90"
-                  : "text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--primary)]"
+                  : isLight
+                    ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
+                    : "text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--primary)]"
               }`}
             >
               <Radio size={11} className={isBroadcast ? "animate-pulse" : ""} />
               <span className="text-[10px] font-mono">{isBroadcast ? "SYNC ON" : "SYNC"}</span>
             </button>
-            <div className="h-3 w-[1px] bg-[var(--border)] shrink-0 mx-0.5" />
+            <div className={`h-3 w-[1px] shrink-0 mx-0.5 ${isLight ? "bg-black/15" : "bg-white/15"}`} />
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleSplitRight();
               }}
               title="Split Right (Columns)"
-              className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--primary)] transition-colors"
+              className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
+                isLight
+                  ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
+                  : "text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--primary)]"
+              }`}
             >
               <Columns2 size={12} />
             </button>
@@ -280,7 +324,11 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 handleSplitDown();
               }}
               title="Split Down (Rows)"
-              className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--primary)] transition-colors"
+              className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
+                isLight
+                  ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
+                  : "text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--primary)]"
+              }`}
             >
               <Rows2 size={12} />
             </button>
@@ -290,7 +338,11 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 toggleMaximizePane(pane.id);
               }}
               title={isMaximized ? "Restore Split View" : "Maximize Pane"}
-              className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--primary)] transition-colors"
+              className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
+                isLight
+                  ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
+                  : "text-[var(--text-muted)] hover:bg-white/10 hover:text-[var(--primary)]"
+              }`}
             >
               {isMaximized ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
             </button>

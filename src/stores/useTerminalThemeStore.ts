@@ -8,17 +8,19 @@ import {
 import type { HighlightKey } from "../lib/highlightPatterns";
 
 export const TERMINAL_FONT_FAMILIES = [
-  "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
-  "'Fira Code', 'JetBrains Mono', Menlo, Monaco, Consolas, monospace",
-  "Consolas, 'JetBrains Mono', Menlo, Monaco, monospace",
-  "Menlo, Monaco, Consolas, monospace",
+  "'JetBrains Mono', 'Fira Code', monospace",
+  "'Fira Code', 'JetBrains Mono', monospace",
+  "'Ubuntu Mono', 'DejaVu Sans Mono', monospace",
+  "Consolas, 'JetBrains Mono', monospace",
+  "Menlo, Monaco, 'JetBrains Mono', monospace",
 ] as const;
 
 export const TERMINAL_FONT_LABELS = [
-  "JetBrains Mono",
-  "Fira Code",
-  "Consolas (system)",
-  "Menlo / Monaco (system)",
+  "JetBrains Mono (Bundled)",
+  "Fira Code (Bundled)",
+  "Ubuntu / DejaVu Mono (Linux)",
+  "Consolas (Windows)",
+  "Menlo / Monaco (macOS)",
 ] as const;
 
 export type TerminalCursorStyle = "bar" | "block" | "underline";
@@ -64,8 +66,31 @@ interface TerminalThemeState {
   getTheme: () => TerminalTheme;
 }
 
+export function normalizeFontFamily(family?: string): string {
+  if (!family) return TERMINAL_FONT_FAMILIES[0];
+  if (family.includes("Fira Code") && family.startsWith("'Fira Code'")) {
+    return TERMINAL_FONT_FAMILIES[1];
+  }
+  if (family.includes("Ubuntu") || family.includes("DejaVu")) {
+    return TERMINAL_FONT_FAMILIES[2];
+  }
+  if (family.includes("Consolas") && family.startsWith("Consolas")) {
+    return TERMINAL_FONT_FAMILIES[3];
+  }
+  if (family.includes("Menlo") && family.startsWith("Menlo")) {
+    return TERMINAL_FONT_FAMILIES[4];
+  }
+  if (family.includes("JetBrains Mono")) {
+    return TERMINAL_FONT_FAMILIES[0];
+  }
+  return family;
+}
+
 function clampFont(patch: Partial<TerminalFontSettings>): Partial<TerminalFontSettings> {
   const out = { ...patch };
+  if (out.fontFamily !== undefined) {
+    out.fontFamily = normalizeFontFamily(out.fontFamily);
+  }
   if (out.fontSize !== undefined) {
     out.fontSize = Math.min(Math.max(out.fontSize, 9), 24);
   }

@@ -1,6 +1,20 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
 
+/* Embedded Offline Fonts */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/fira-code/400.css";
+@import "@fontsource/fira-code/500.css";
+@import "@fontsource/fira-code/600.css";
+@import "@fontsource/fira-code/700.css";
+
 @layer base {
   :root {
     --canvas: #0a0e14;
@@ -104,7 +118,7 @@
   }
 
   .font-mono, [class*="font-mono"], code, pre, kbd, input.font-mono {
-    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-feature-settings: 'liga' on, 'calt' on, 'zero' on;
     letter-spacing: -0.01em;
   }

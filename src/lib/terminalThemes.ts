@@ -379,4 +379,13 @@ export function applyTerminalAppearance(
   term.options.lineHeight = font.lineHeight;
   term.options.cursorStyle = font.cursorStyle;
   term.options.cursorBlink = font.cursorBlink;
+  // xterm's canvas renderer caches rasterized glyphs in a texture atlas keyed
+  // by the old font — without clearing it, a font-family change can silently
+  // keep painting with stale glyph bitmaps until the next full repaint.
+  try {
+    term.clearTextureAtlas();
+  } catch {
+    // not supported by the active renderer — safe to ignore
+  }
+  term.refresh(0, term.rows - 1);
 }

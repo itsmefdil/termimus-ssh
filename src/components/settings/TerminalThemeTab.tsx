@@ -9,6 +9,7 @@ import {
   useTerminalThemeStore,
   TERMINAL_FONT_FAMILIES,
   TERMINAL_FONT_LABELS,
+  normalizeFontFamily,
   type TerminalCursorStyle,
 } from "../../stores/useTerminalThemeStore";
 import { CustomSelect } from "../ui/CustomSelect";
@@ -131,7 +132,7 @@ export function TerminalThemeTab() {
             })}
           </div>
 
-          <TerminalPreview theme={theme} />
+          <TerminalPreview theme={theme} font={font} />
 
           {theme.suggestedFont && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 px-4 py-3">
@@ -151,9 +152,9 @@ export function TerminalThemeTab() {
               <button
                 type="button"
                 onClick={() => {
-                  const idx = TERMINAL_FONT_LABELS.indexOf(
-                    theme.suggestedFont!
-                      .familyLabel as (typeof TERMINAL_FONT_LABELS)[number]
+                  const targetLabel = theme.suggestedFont!.familyLabel;
+                  const idx = TERMINAL_FONT_LABELS.findIndex((l) =>
+                    l.toLowerCase().includes(targetLabel.toLowerCase())
                   );
                   setFont({
                     fontFamily:
@@ -174,8 +175,8 @@ export function TerminalThemeTab() {
       </div>
 
       {/* ── Font & size ───────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden shadow-sm">
-        <div className="border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] shadow-sm">
+        <div className="rounded-t-2xl border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Type size={15} className="text-[var(--secondary)]" />
             Font &amp; Text Size
@@ -190,12 +191,12 @@ export function TerminalThemeTab() {
             <div className="space-y-0.5">
               <p className="font-semibold text-[var(--text-primary)]">Font family</p>
               <p className="text-[11px] text-[var(--text-muted)]">
-                System fonts work fully offline; web fonts need internet once.
+                Bundled fonts (JetBrains Mono &amp; Fira Code) work 100% offline.
               </p>
             </div>
-            <div className="w-56 shrink-0">
+            <div className="w-64 shrink-0">
               <CustomSelect
-                value={font.fontFamily}
+                value={normalizeFontFamily(font.fontFamily)}
                 onChange={(v) => setFont({ fontFamily: v })}
                 options={TERMINAL_FONT_FAMILIES.map((f, i) => ({
                   value: f,
@@ -280,8 +281,8 @@ export function TerminalThemeTab() {
       </div>
 
       {/* ── Keyword highlighting ──────────────────────────────────────── */}
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] overflow-hidden shadow-sm">
-        <div className="border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] shadow-sm">
+        <div className="rounded-t-2xl border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Highlighter size={15} className="text-[var(--tertiary)]" />
             Keyword Highlighting

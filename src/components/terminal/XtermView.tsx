@@ -74,16 +74,28 @@ const textEncoder = new TextEncoder();
  * Applies the current theme + font settings from the store to a pooled
  * terminal instance. Never reconnects SSH and never touches the buffer.
  */
-function applyAppearanceToEntry(entry: TerminalSessionEntry) {
+function applyAppearanceToEntry(entry: TerminalSessionEntry, sessionId?: string) {
   const store = useTerminalThemeStore.getState();
   const theme = getTerminalTheme(store.themeId);
+  const themeBg = theme.xterm.background ?? "#0a0e14";
   applyTerminalAppearance(entry.term, theme, store.font);
+  if (entry.element) {
+    entry.element.style.backgroundColor = themeBg;
+    if (entry.element.parentElement) {
+      entry.element.parentElement.style.backgroundColor = themeBg;
+    }
+  }
   try {
     entry.fitAddon.fit();
     const cols = entry.term.cols;
     const rows = entry.term.rows;
     if (cols >= 20 && rows >= 5) {
-      entry.lastSize = { cols, rows };
+      if (entry.lastSize.cols !== cols || entry.lastSize.rows !== rows) {
+        entry.lastSize = { cols, rows };
+        if (sessionId) {
+          api.resizeSsh(sessionId, cols, rows).catch(() => {});
+        }
+      }
     }
   } catch {
     // ignore fit during layout animation
@@ -96,9 +108,9 @@ function applyAppearanceToEntry(entry: TerminalSessionEntry) {
  * Called whenever the user changes appearance in Settings.
  */
 export function applyTerminalThemeToAll() {
-  for (const entry of terminalPool.values()) {
+  for (const [id, entry] of terminalPool.entries()) {
     try {
-      applyAppearanceToEntry(entry);
+      applyAppearanceToEntry(entry, id);
     } catch {
       // one bad instance must not break the rest
     }
@@ -329,6 +341,10 @@ export function disposeTerminalSession(sessionId: string) {
 }
 
 export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
+  const themeId = useTerminalThemeStore((s) => s.themeId);
+  const currentTheme = getTerminalTheme(themeId);
+  const themeBg = currentTheme.xterm.background ?? "#0a0e14";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -495,7 +511,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       lastSizeRef.current = entry.lastSize;
       // Appearance may have changed while unmounted — re-apply (no reconnect).
       try {
-        applyAppearanceToEntry(entry);
+        applyAppearanceToEntry(entry, sessionId);
       } catch {
         // ignore
       }
@@ -514,6 +530,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       if (entry.element.parentElement !== containerRef.current) {
         containerRef.current.appendChild(entry.element);
       }
+      entry.element.style.backgroundColor = themeBg;
     } else {
       // Create new terminal instance (theme/font come from the store,
       // falling back to the classic Terminal Obsidian defaults).
@@ -522,6 +539,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       const initialFont = themeStore.font;
       const domWrapper = document.createElement("div");
       domWrapper.className = "w-full h-full";
+      domWrapper.style.backgroundColor = initialTheme.xterm.background || "#0a0e14";
       containerRef.current.appendChild(domWrapper);
 
       const term = new Terminal({
@@ -766,7 +784,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       const poolEntry = terminalPool.get(sessionId);
       if (!poolEntry) return;
       try {
-        applyAppearanceToEntry(poolEntry);
+        applyAppearanceToEntry(poolEntry, sessionId);
       } catch {
         // ignore
       }
@@ -789,6 +807,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 10 : 0,
+        backgroundColor: themeBg,
       }}
     >
       {/* Terminal Viewport */}
@@ -796,6 +815,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         ref={containerRef}
         onContextMenu={handleContextMenu}
         className="absolute inset-0 p-2"
+        style={{ backgroundColor: themeBg }}
       />
 
       {/* Right-Click Terminal Context Menu */}
