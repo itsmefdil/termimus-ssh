@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const appWindow = getCurrentWindow();
@@ -39,6 +40,30 @@ const cornerHandles: {
 ];
 
 export function ResizeHandles() {
+  const [disabled, setDisabled] = useState(false);
+
+  useEffect(() => {
+    const updateState = async () => {
+      try {
+        const [max, fs] = await Promise.all([
+          appWindow.isMaximized().catch(() => false),
+          appWindow.isFullscreen().catch(() => false),
+        ]);
+        setDisabled(max || fs);
+      } catch {
+        // ignore
+      }
+    };
+
+    updateState();
+    const unlistenPromise = appWindow.onResized(() => updateState());
+    return () => {
+      unlistenPromise.then((u) => u()).catch(() => {});
+    };
+  }, []);
+
+  if (disabled) return null;
+
   async function startResize(direction: (typeof edgeHandles)[number]["direction"]) {
     try {
       await appWindow.startResizeDragging(direction);

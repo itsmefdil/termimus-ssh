@@ -88,6 +88,7 @@ export function Header({
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
 
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isQuickConnectOpen, setIsQuickConnectOpen] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState<{
     x: number;
@@ -203,10 +204,11 @@ export function Header({
     const updateWindowState = async () => {
       try {
         const [maximized, fullscreen] = await Promise.all([
-          appWindow.isMaximized(),
-          appWindow.isFullscreen(),
+          appWindow.isMaximized().catch(() => false),
+          appWindow.isFullscreen().catch(() => false),
         ]);
         setIsMaximized(maximized || fullscreen);
+        setIsFullscreen(fullscreen);
       } catch {
         // ignore
       }
@@ -217,11 +219,19 @@ export function Header({
       updateWindowState();
     });
 
-    // Global Ctrl+K / Cmd+K listener
+    // Global keyboard listeners:
+    // - Ctrl+K / Cmd+K: Quick Connect
+    // - F11 / Cmd+Ctrl+F: Toggle True Fullscreen Space
     function handleGlobalKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setIsQuickConnectOpen((prev) => !prev);
+      } else if (
+        e.key === "F11" ||
+        (e.metaKey && e.ctrlKey && e.key.toLowerCase() === "f")
+      ) {
+        e.preventDefault();
+        handleToggleFullscreen();
       }
     }
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -240,9 +250,18 @@ export function Header({
     }
   }
 
+  async function handleToggleFullscreen() {
+    try {
+      const isFs = await appWindow.isFullscreen().catch(() => false);
+      await appWindow.setFullscreen(!isFs);
+    } catch {
+      // ignore
+    }
+  }
+
   async function handleToggleMaximize() {
     try {
-      const isFs = await appWindow.isFullscreen();
+      const isFs = await appWindow.isFullscreen().catch(() => false);
       if (isFs) {
         await appWindow.setFullscreen(false);
       } else {
@@ -303,8 +322,9 @@ export function Header({
       >
         {/* macOS: native traffic lights (titleBarStyle: Overlay in
             tauri.macos.conf.json) are drawn by the system on top of this
-            area — just reserve their space */}
-        {isMac && <div data-tauri-drag-region="false" className="h-full w-[78px] shrink-0" />}
+            area. In fullscreen, macOS moves them to the auto-hiding menu bar,
+            so the 78px spacer is only needed in windowed mode */}
+        {isMac && !isFullscreen && <div data-tauri-drag-region="false" className="h-full w-[78px] shrink-0" />}
 
         {/* Brand Logo & Sidebar Toggle Button */}
         <div className={`flex h-full items-center gap-1 shrink-0 pr-1 ${isMac ? "" : "pl-2.5"}`}>
@@ -503,7 +523,7 @@ export function Header({
             </button>
             <button
               onClick={handleToggleMaximize}
-              title={isMaximized ? "Restore" : "Maximize"}
+              title={isMaximized ? "Restore" : "Maximize (F11 for Full Screen)"}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
             >
               {isMaximized ? <Copy size={12} /> : <Square size={12} />}
