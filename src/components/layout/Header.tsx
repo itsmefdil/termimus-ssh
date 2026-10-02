@@ -18,6 +18,7 @@ import {
   ArrowRightToLine,
   XCircle,
   CopyPlus,
+  Laptop,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useShallow } from "zustand/react/shallow";
@@ -424,9 +425,11 @@ export function Header({
                     : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/60 border border-transparent hover:border-[var(--border)]/40"
                 }`}
               >
-                {/* Connection Status Dot */}
+                {/* Connection Status Dot / Local Terminal Icon */}
                 {isConnecting ? (
                   <Loader2 size={11} className="animate-spin text-[var(--primary)] shrink-0" />
+                ) : primaryTab.isLocal ? (
+                  <Laptop size={12} className="text-emerald-400 shrink-0" />
                 ) : (
                   <span
                     className={`h-2 w-2 rounded-full shrink-0 ${

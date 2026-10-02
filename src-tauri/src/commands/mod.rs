@@ -1,5 +1,6 @@
 use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput};
 use crate::db::Database;
+use crate::pty::PtyManager;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
 use crate::tunnel::TunnelManager;
@@ -18,6 +19,7 @@ pub struct AppState {
     pub ssh: Arc<SessionManager>,
     pub sftp: Arc<SftpManager>,
     pub tunnel: Arc<TunnelManager>,
+    pub pty: Arc<PtyManager>,
 }
 
 #[derive(Serialize)]
@@ -633,6 +635,52 @@ pub async fn ssh_disconnect(
     session_id: String,
 ) -> Result<(), String> {
     state.ssh.disconnect(&session_id).await
+}
+
+// ================= LOCAL PTY COMMANDS =================
+
+#[tauri::command]
+pub fn local_pty_default_shell() -> String {
+    PtyManager::detect_default_shell()
+}
+
+#[tauri::command]
+pub async fn local_pty_spawn(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    shell: Option<String>,
+) -> Result<String, String> {
+    state.pty.spawn(app, session_id, cols, rows, shell).await
+}
+
+#[tauri::command]
+pub async fn local_pty_write(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    state.pty.write(&session_id, &data).await
+}
+
+#[tauri::command]
+pub async fn local_pty_resize(
+    state: State<'_, AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state.pty.resize(&session_id, cols, rows).await
+}
+
+#[tauri::command]
+pub async fn local_pty_kill(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.pty.kill(&session_id).await
 }
 
 // ================= SSH KEY COMMANDS =================

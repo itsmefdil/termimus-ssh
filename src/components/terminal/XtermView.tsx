@@ -192,7 +192,8 @@ function adjustTerminalFontSize(
     if (cols >= 20 && rows >= 5) {
       const entry = terminalPool.get(targetSessionId);
       if (entry) entry.lastSize = { cols, rows };
-      api.resizeSsh(targetSessionId, cols, rows).catch(() => {});
+      const isTargetLocal = targetSessionId.startsWith("local-") || Boolean(useSessionStore.getState().tabs.find((t) => t.id === targetSessionId)?.isLocal);
+      (isTargetLocal ? api.resizeLocalPty : api.resizeSsh)(targetSessionId, cols, rows).catch(() => {});
     }
   } catch {
     // ignore
@@ -256,9 +257,9 @@ function bindTerminalShortcuts(
       return false;
     }
 
-    // Clear Buffer: Ctrl+Shift+K (Linux/Win) or Cmd+K (Mac)
+    // Clear Buffer: Ctrl+Shift+K (Linux/Win) or Cmd+Shift+K (Mac)
     if (
-      (isMac && modKey && event.key.toLowerCase() === "k") ||
+      (isMac && modKey && event.shiftKey && event.key.toLowerCase() === "k") ||
       (!isMac && event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "k")
     ) {
       event.preventDefault();
@@ -337,6 +338,14 @@ export function disposeTerminalSession(sessionId: string) {
     // ignore
   }
 
+  if (entry.element.parentElement) {
+    try {
+      entry.element.parentElement.removeChild(entry.element);
+    } catch {
+      // ignore
+    }
+  }
+
   terminalPool.delete(sessionId);
 }
 
@@ -355,6 +364,8 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   const setError = useSessionStore((s) => s.setSessionError);
   const closeSession = useSessionStore((s) => s.closeSession);
   const host = useHostStore((s) => s.hosts.find((h) => h.id === hostId));
+  const tab = useSessionStore((s) => s.tabs.find((t) => t.id === sessionId));
+  const isLocal = sessionId.startsWith("local-") || Boolean(tab?.isLocal);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [logs, setLogs] = useState<ConnectionLog[]>(
@@ -371,7 +382,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
   // layout) doesn't flash the ConnectionProgress loading screen for a frame
   // before the effect corrects it.
   const [isConnected, setIsConnected] = useState(
-    () => terminalPool.get(sessionId)?.hasConnected ?? false
+    () => isLocal || (terminalPool.get(sessionId)?.hasConnected ?? false)
   );
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -450,6 +461,26 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
   const startConnection = useCallback(
     (cols: number, rows: number) => {
+      if (isLocal) {
+        setIsConnected(true);
+        setConnected(sessionId, true);
+        const entry = terminalPool.get(sessionId);
+        if (entry) {
+          entry.hasConnected = true;
+          entry.connectionError = null;
+        }
+        api
+          .spawnLocalPty(sessionId, cols, rows)
+          .catch((e) => {
+            const errStr = String(e);
+            setIsConnected(false);
+            setConnectionError(errStr);
+            setError(sessionId, errStr);
+            termRef.current?.write(`\r\n\x1b[31mFailed to start local terminal: ${errStr}\x1b[0m\r\n`);
+          });
+        return;
+      }
+
       const initialLog: ConnectionLog = {
         step: 1,
         message: `Initiating connection to ${host?.address || "server"}...`,
@@ -495,7 +526,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
           termRef.current?.write(`\r\n\x1b[31mFailed to connect: ${errStr}\x1b[0m\r\n`);
         });
     },
-    [hostId, sessionId, host, setConnected, setError]
+    [hostId, sessionId, host, setConnected, setError, isLocal]
   );
 
   useEffect(() => {
@@ -620,49 +651,65 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
           .getState()
           .getBroadcastTargetSessionIds(sessionId);
 
+        const storeTabs = useSessionStore.getState().tabs;
         for (const tid of targetSessionIds) {
-          api.writeSsh(tid, bytes).catch((e) => console.error("ssh_write failed:", e));
+          const targetTab = storeTabs.find((t) => t.id === tid);
+          const writeFn = (targetTab?.isLocal || tid.startsWith("local-"))
+            ? api.writeLocalPty
+            : api.writeSsh;
+          writeFn(tid, bytes).catch((e) => console.error("terminal write failed:", e));
         }
       });
 
       // Stream listeners
       const unlistenFns: Array<() => void> = [];
 
-      listen<number[]>(`ssh-data-${sessionId}`, (event) => {
-        const bytes = new Uint8Array(event.payload);
-        term.write(bytes);
-      }).then((unlisten) => unlistenFns.push(unlisten));
+      if (isLocal) {
+        listen<number[]>(`pty-data-${sessionId}`, (event) => {
+          const bytes = new Uint8Array(event.payload);
+          term.write(bytes);
+        }).then((unlisten) => unlistenFns.push(unlisten));
 
-      listen<string>(`ssh-closed-${sessionId}`, () => {
-        // When connection is closed (e.g. exit or Ctrl+D), immediately close the session/tab
-        closeSession(sessionId);
-      }).then((unlisten) => unlistenFns.push(unlisten));
+        listen<void>(`pty-closed-${sessionId}`, () => {
+          closeSession(sessionId);
+        }).then((unlisten) => unlistenFns.push(unlisten));
+      } else {
+        listen<number[]>(`ssh-data-${sessionId}`, (event) => {
+          const bytes = new Uint8Array(event.payload);
+          term.write(bytes);
+        }).then((unlisten) => unlistenFns.push(unlisten));
 
-      listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
-        const p = event.payload;
-        const newLog: ConnectionLog = {
-          step: p.step,
-          message: p.message,
-          timestamp: p.timestamp,
-          isError: p.is_error,
-        };
+        listen<string>(`ssh-closed-${sessionId}`, () => {
+          // When connection is closed (e.g. exit or Ctrl+D), immediately close the session/tab
+          closeSession(sessionId);
+        }).then((unlisten) => unlistenFns.push(unlisten));
 
-        // Persist into pool so remounts can recover state
-        const poolEntry = terminalPool.get(sessionId);
-        if (poolEntry) {
-          poolEntry.connectionStep = p.step;
-          poolEntry.connectionLogs = [...poolEntry.connectionLogs, newLog];
-          if (p.is_error) {
-            poolEntry.connectionError = p.message;
+        listen<SshProgressEvent>(`ssh-progress-${sessionId}`, (event) => {
+          const p = event.payload;
+          const newLog: ConnectionLog = {
+            step: p.step,
+            message: p.message,
+            timestamp: p.timestamp,
+            isError: p.is_error,
+          };
+
+          // Persist into pool so remounts can recover state
+          const poolEntry = terminalPool.get(sessionId);
+          if (poolEntry) {
+            poolEntry.connectionStep = p.step;
+            poolEntry.connectionLogs = [...poolEntry.connectionLogs, newLog];
+            if (p.is_error) {
+              poolEntry.connectionError = p.message;
+            }
           }
-        }
 
-        setCurrentStep(p.step);
-        setLogs((prev) => [...prev, newLog]);
-        if (p.is_error) {
-          setConnectionError(p.message);
-        }
-      }).then((unlisten) => unlistenFns.push(unlisten));
+          setCurrentStep(p.step);
+          setLogs((prev) => [...prev, newLog]);
+          if (p.is_error) {
+            setConnectionError(p.message);
+          }
+        }).then((unlisten) => unlistenFns.push(unlisten));
+      }
 
       entry = {
         term,
@@ -718,7 +765,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
               if (entry) {
                 entry.lastSize = { cols, rows };
               }
-              api.resizeSsh(sessionId, cols, rows).catch(() => {});
+              (isLocal ? api.resizeLocalPty : api.resizeSsh)(sessionId, cols, rows).catch(() => {});
             }
           }
         } catch {
@@ -765,7 +812,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
             lastSizeRef.current = { cols, rows };
             const entry = terminalPool.get(sessionId);
             if (entry) entry.lastSize = { cols, rows };
-            api.resizeSsh(sessionId, cols, rows).catch(() => {});
+            (isLocal ? api.resizeLocalPty : api.resizeSsh)(sessionId, cols, rows).catch(() => {});
           }
         }
         termRef.current.refresh(0, termRef.current.rows - 1);
@@ -1021,8 +1068,8 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         />
       )}
 
-      {/* Termius-Style Connection Progress & Process Tree Overlay */}
-      {(!isConnected || connectionError) && (
+      {/* Termius-Style Connection Progress & Process Tree Overlay (SSH only) */}
+      {!isLocal && (!isConnected || connectionError) && (
         <ConnectionProgress
           sessionId={sessionId}
           host={host}

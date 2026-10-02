@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Zap, Server, Plus, X, Terminal } from "lucide-react";
+import { Zap, Server, Plus, X, Terminal, Laptop } from "lucide-react";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { Host } from "../../lib/api";
@@ -16,6 +16,7 @@ interface QuickConnectModalProps {
 export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectModalProps) {
   const { hosts, openCreateModal } = useHostStore();
   const openSession = useSessionStore((s) => s.openSession);
+  const openLocalSession = useSessionStore((s) => s.openLocalSession);
   const [input, setInput] = useState("");
 
   useEffect(() => {
@@ -48,6 +49,12 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
 
   if (!isOpen) return null;
 
+  async function handleOpenLocalTerminal() {
+    onClose();
+    await openLocalSession(true);
+    onConnect?.();
+  }
+
   async function handleConnectToHost(host: Host) {
     onClose();
     await openSession(host);
@@ -57,7 +64,16 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
   async function handleSubmitAdHoc(e: React.FormEvent) {
     e.preventDefault();
     const val = input.trim();
-    if (!val) return;
+    if (!val) {
+      await handleOpenLocalTerminal();
+      return;
+    }
+
+    const low = val.toLowerCase();
+    if (["local", "terminal", "sh", "bash", "zsh", "pwsh", "cmd"].includes(low)) {
+      await handleOpenLocalTerminal();
+      return;
+    }
 
     // Check if matches an existing host exactly by label or address
     const existing = hosts.find(
@@ -159,6 +175,40 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
 
         {/* Host List */}
         <div className="max-h-80 overflow-y-auto p-1.5 space-y-1">
+          {(!input.trim() ||
+            "run local terminal device shell bash zsh pwsh powershell cmd".includes(
+              input.trim().toLowerCase()
+            )) && (
+            <button
+              type="button"
+              onClick={handleOpenLocalTerminal}
+              className="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-[var(--surface-high)] transition-colors border border-[var(--primary)]/20 bg-[var(--primary)]/5"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--primary)]/15 text-[var(--primary)] shrink-0 group-hover:bg-[var(--primary)] group-hover:text-[var(--on-primary)] transition-colors">
+                  <Laptop size={14} />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                    <span>Run Local Terminal</span>
+                    <span className="rounded bg-[var(--surface-container)] px-1.5 py-0.2 font-mono text-[9px] text-[var(--primary)] border border-[var(--border)]">
+                      device
+                    </span>
+                  </div>
+                  <div className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+                    Spawn interactive shell on this computer
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="rounded bg-[var(--primary)]/15 px-2 py-1 font-mono text-[10px] font-semibold text-[var(--primary)] opacity-80 group-hover:opacity-100 transition-opacity">
+                  Launch ➔
+                </span>
+              </div>
+            </button>
+          )}
+
           {filteredHosts.length === 0 ? (
             <div className="p-6 text-center text-xs text-[var(--text-muted)]">
               {hosts.length === 0 ? (

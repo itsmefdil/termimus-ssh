@@ -38,6 +38,7 @@ russh-sftp = "3.0.0"
 anyhow = "1.0.104"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.4.0"
+portable-pty = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

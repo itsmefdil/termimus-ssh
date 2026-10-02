@@ -1,6 +1,7 @@
 pub mod biometric;
 pub mod commands;
 pub mod db;
+pub mod pty;
 pub mod sftp;
 pub mod ssh;
 pub mod sshkey;
@@ -9,6 +10,7 @@ pub mod vault;
 
 use commands::AppState;
 use db::Database;
+use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SessionManager;
 use std::sync::Arc;
@@ -22,8 +24,9 @@ pub fn run() {
     let ssh = Arc::new(SessionManager::new());
     let sftp = Arc::new(SftpManager::new());
     let tunnel = Arc::new(TunnelManager::new());
+    let pty = Arc::new(PtyManager::new());
 
-    let state = AppState { db, vault, ssh, sftp, tunnel };
+    let state = AppState { db, vault, ssh, sftp, tunnel, pty };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -53,6 +56,11 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::local_pty_default_shell,
+            commands::local_pty_spawn,
+            commands::local_pty_write,
+            commands::local_pty_resize,
+            commands::local_pty_kill,
             commands::key_generate,
             commands::key_derive_public,
             commands::keychain_list,

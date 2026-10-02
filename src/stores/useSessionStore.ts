@@ -29,6 +29,7 @@ export interface SshTab {
   connected: boolean;
   connecting: boolean;
   error?: string;
+  isLocal?: boolean;
 }
 
 export type DropZone = "left" | "right" | "top" | "bottom" | "center";
@@ -73,6 +74,12 @@ interface SessionState {
 
   // Session lifecycle
   openSession: (host: Host, newGroup?: boolean) => Promise<string>;
+  openLocalSession: (newGroup?: boolean) => Promise<string>;
+  openLocalSessionInSplit: (
+    targetPaneId: string,
+    direction: SplitDirection,
+    side?: "first" | "second"
+  ) => string;
   /**
    * Atomically creates a new session AND splits the target pane in one state update.
    * This avoids the double-render / lost-progress-log bug that occurs when
@@ -287,6 +294,146 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return sessionId;
   },
 
+  openLocalSession: async (newGroup = true) => {
+    const sessionId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    let shellName = "terminal";
+    try {
+      const defaultShell = await api.getDefaultLocalShell();
+      shellName = defaultShell.split("/").pop()?.split("\\").pop() || "terminal";
+    } catch {
+      // fallback
+    }
+
+    const newTab: SshTab = {
+      id: sessionId,
+      hostId: "local",
+      hostLabel: `Local (${shellName})`,
+      hostAddress: "localhost",
+      connected: false,
+      connecting: true,
+      isLocal: true,
+    };
+
+    set((state) => {
+      if (newGroup || state.groups.length === 0 || !state.activeGroupId) {
+        const initial = createInitialLayout(sessionId);
+        const newGroupObj: TerminalGroup = {
+          id: generateGroupId(),
+          rootPane: initial,
+          label: `Local: ${shellName}`,
+        };
+
+        return {
+          tabs: [...state.tabs, newTab],
+          activeTabId: sessionId,
+          groups: [...state.groups, newGroupObj],
+          activeGroupId: newGroupObj.id,
+          rootPane: initial,
+          activePaneId: initial.id,
+          maximizedPaneId: null,
+        };
+      }
+
+      const currentGroup =
+        state.groups.find((g) => g.id === state.activeGroupId) || state.groups[0];
+
+      const currentActivePane =
+        (state.activePaneId && findPaneById(currentGroup.rootPane, state.activePaneId)) ||
+        getAllLeafPanes(currentGroup.rootPane)[0];
+
+      const targetPaneId = currentActivePane ? currentActivePane.id : currentGroup.rootPane.id;
+      const updatedRoot = moveTabToPane(currentGroup.rootPane, targetPaneId, sessionId);
+
+      const updatedGroups = state.groups.map((g) =>
+        g.id === currentGroup.id ? { ...g, rootPane: updatedRoot } : g
+      );
+
+      return {
+        tabs: [...state.tabs, newTab],
+        activeTabId: sessionId,
+        groups: updatedGroups,
+        activeGroupId: currentGroup.id,
+        rootPane: updatedRoot,
+        activePaneId: targetPaneId,
+      };
+    });
+
+    return sessionId;
+  },
+
+  openLocalSessionInSplit: (
+    targetPaneId: string,
+    direction: SplitDirection,
+    side: "first" | "second" = "second"
+  ) => {
+    const sessionId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const newTab: SshTab = {
+      id: sessionId,
+      hostId: "local",
+      hostLabel: "Local Terminal",
+      hostAddress: "localhost",
+      connected: false,
+      connecting: true,
+      isLocal: true,
+    };
+
+    set((state) => {
+      if (!state.activeGroupId || state.groups.length === 0 || !state.rootPane) {
+        const initial = createInitialLayout(sessionId);
+        const newGroupObj: TerminalGroup = {
+          id: generateGroupId(),
+          rootPane: initial,
+        };
+
+        return {
+          tabs: [...state.tabs, newTab],
+          activeTabId: sessionId,
+          groups: [...state.groups, newGroupObj],
+          activeGroupId: newGroupObj.id,
+          rootPane: initial,
+          activePaneId: initial.id,
+          maximizedPaneId: null,
+        };
+      }
+
+      const activeGroup =
+        state.groups.find((g) => g.id === state.activeGroupId) || state.groups[0];
+
+      let effectiveTargetPaneId = targetPaneId;
+      if (!findPaneById(activeGroup.rootPane, effectiveTargetPaneId)) {
+        const leaves = getAllLeafPanes(activeGroup.rootPane);
+        if (leaves.length > 0) {
+          effectiveTargetPaneId = leaves[0].id;
+        }
+      }
+
+      const updatedRoot = splitLeafNode(
+        activeGroup.rootPane,
+        effectiveTargetPaneId,
+        sessionId,
+        direction,
+        side
+      );
+
+      const updatedGroups = state.groups.map((g) =>
+        g.id === activeGroup.id ? { ...g, rootPane: updatedRoot } : g
+      );
+
+      const newPane = findPaneContainingTab(updatedRoot, sessionId);
+
+      return {
+        tabs: [...state.tabs, newTab],
+        groups: updatedGroups,
+        rootPane: updatedRoot,
+        activePaneId: newPane ? newPane.id : state.activePaneId,
+        activeTabId: sessionId,
+        maximizedPaneId: null,
+      };
+    });
+
+    return sessionId;
+  },
+
   openClusterGroup: (nodes, layout, broadcast = false, label) => {
     if (nodes.length === 0) return [];
 
@@ -382,9 +529,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       console.warn("Failed to dispose xterm instance:", e);
     }
 
-    // 2. Disconnect SSH backend
+    // 2. Disconnect SSH / Local backend
+    const tabToClose = get().tabs.find((t) => t.id === sessionId);
     try {
-      await api.disconnectSsh(sessionId);
+      if (tabToClose?.isLocal) {
+        await api.killLocalPty(sessionId);
+      } else {
+        await api.disconnectSsh(sessionId);
+      }
     } catch (e) {
       console.warn("Failed to disconnect cleanly:", e);
     }
@@ -753,9 +905,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
     const targetSessionIds = getBroadcastTargetSessionIds(activeTabId);
     await Promise.all(
-      targetSessionIds.map((sid) =>
-        api.writeSsh(sid, bytes).catch((e) => console.error("ssh_write broadcast failed:", e))
-      )
+      targetSessionIds.map((sid) => {
+        const targetTab = tabs.find((t) => t.id === sid);
+        const writeFn = targetTab?.isLocal ? api.writeLocalPty : api.writeSsh;
+        return writeFn(sid, bytes).catch((e) => console.error("write broadcast failed:", e));
+      })
     );
     return true;
   },
@@ -796,9 +950,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
 
     await Promise.all(
-      targetSessionIds.map((sid) =>
-        api.writeSsh(sid, bytes).catch((e) => console.error("ssh_write snippet failed:", e))
-      )
+      targetSessionIds.map((sid) => {
+        const targetTab = tabs.find((t) => t.id === sid);
+        const writeFn = targetTab?.isLocal ? api.writeLocalPty : api.writeSsh;
+        return writeFn(sid, bytes).catch((e) => console.error("write snippet failed:", e));
+      })
     );
 
     const targetLabels = targetSessionIds.map(

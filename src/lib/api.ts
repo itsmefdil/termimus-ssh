@@ -229,6 +229,27 @@ export const api = {
   disconnectSsh: (sessionId: string) =>
     invoke<void>("ssh_disconnect", { sessionId }),
 
+  // Local PTY Sessions
+  getDefaultLocalShell: () => invoke<string>("local_pty_default_shell"),
+  spawnLocalPty: (
+    sessionId: string,
+    cols: number,
+    rows: number,
+    shell?: string
+  ) =>
+    invoke<string>("local_pty_spawn", {
+      sessionId,
+      cols,
+      rows,
+      shell: shell ?? null,
+    }),
+  writeLocalPty: (sessionId: string, data: number[]) =>
+    invoke<void>("local_pty_write", { sessionId, data }),
+  resizeLocalPty: (sessionId: string, cols: number, rows: number) =>
+    invoke<void>("local_pty_resize", { sessionId, cols, rows }),
+  killLocalPty: (sessionId: string) =>
+    invoke<void>("local_pty_kill", { sessionId }),
+
   // SSH Key Utilities
   generateKeyPair: (algorithm: string, comment: string = "") =>
     invoke<GeneratedKeyPair>("key_generate", { algorithm, comment }),
