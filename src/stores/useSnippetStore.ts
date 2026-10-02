@@ -48,11 +48,13 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   saveSnippet: async (input, snippetId) => {
     await api.saveSnippet(input, snippetId);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   deleteSnippet: async (id: string) => {
     await api.deleteSnippet(id);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   openCreateModal: () => set({ isModalOpen: true, editingSnippet: null }),

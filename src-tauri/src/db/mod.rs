@@ -17,6 +17,7 @@ impl Database {
         }
 
         let conn = Connection::open(&db_path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let db = Database {
             conn: std::sync::Mutex::new(conn),
         };
@@ -38,7 +39,8 @@ impl Database {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 parent_id TEXT,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS credentials (
@@ -139,6 +141,9 @@ impl Database {
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN os_icon TEXT", []);
         // v0.5.0: bastion / jump host proxyjump
         let _ = conn.execute("ALTER TABLE hosts ADD COLUMN jump_host_id TEXT", []);
+        // folders updated_at
+        let _ = conn.execute("ALTER TABLE folders ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("UPDATE folders SET updated_at = created_at WHERE updated_at = ''", []);
 
         Ok(())
     }
@@ -313,6 +318,7 @@ impl Database {
 
     pub fn delete_host(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let _ = conn.execute("UPDATE hosts SET jump_host_id = NULL WHERE jump_host_id = ?1", params![id]);
         conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -509,32 +515,66 @@ impl Database {
 
     pub fn list_folders(&self) -> Result<Vec<Folder>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at FROM folders ORDER BY name ASC")?;
+        let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at, updated_at FROM folders ORDER BY name ASC")?;
         let folders = stmt.query_map([], |row| {
+            let created_at: String = row.get(3)?;
+            let updated_at: String = row.get(4).unwrap_or_else(|_| created_at.clone());
+            let updated_at = if updated_at.is_empty() { created_at.clone() } else { updated_at };
             Ok(Folder {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 parent_id: row.get(2)?,
-                created_at: row.get(3)?,
+                created_at,
+                updated_at,
             })
         })?.filter_map(|r| r.ok()).collect();
 
         Ok(folders)
     }
 
+    pub fn get_folder(&self, id: &str) -> Result<Option<Folder>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let created_at: String = row.get(3)?;
+            let updated_at: String = row.get(4).unwrap_or_else(|_| created_at.clone());
+            let updated_at = if updated_at.is_empty() { created_at.clone() } else { updated_at };
+            Ok(Some(Folder {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                parent_id: row.get(2)?,
+                created_at,
+                updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn save_folder(&self, folder: &Folder) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let updated_at = if folder.updated_at.is_empty() {
+            chrono::Utc::now().to_rfc3339()
+        } else {
+            folder.updated_at.clone()
+        };
         conn.execute(
-            "INSERT INTO folders (id, name, parent_id, created_at)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(id) DO UPDATE SET name=excluded.name, parent_id=excluded.parent_id",
-            params![folder.id, folder.name, folder.parent_id, folder.created_at],
+            "INSERT INTO folders (id, name, parent_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                parent_id=excluded.parent_id,
+                updated_at=excluded.updated_at",
+            params![folder.id, folder.name, folder.parent_id, folder.created_at, updated_at],
         )?;
         Ok(())
     }
 
     pub fn delete_folder(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![id]);
+        let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![id]);
         conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -800,22 +840,6 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_folder(&self, id: &str) -> Result<Option<Folder>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at FROM folders WHERE id = ?1")?;
-        let mut rows = stmt.query(params![id])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(Folder {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                parent_id: row.get(2)?,
-                created_at: row.get(3)?,
-            }))
-        } else {
-            Ok(None)
-        }
-    }
-
     pub fn get_known_host(&self, address: &str, port: u16) -> Result<Option<KnownHost>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -1004,13 +1028,25 @@ impl Database {
                         if let Ok(Some(local)) = self.get_host(&ts.entity_id) {
                             if local.updated_at <= ts.deleted_at {
                                 let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("UPDATE hosts SET jump_host_id = NULL WHERE jump_host_id = ?1", params![&ts.entity_id]);
                                 let _ = conn.execute("DELETE FROM hosts WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
                     }
                     "folder" => {
-                        let conn = self.conn.lock().unwrap();
-                        let _ = conn.execute("DELETE FROM folders WHERE id = ?1", params![&ts.entity_id]);
+                        if let Ok(Some(local)) = self.get_folder(&ts.entity_id) {
+                            let local_time = if !local.updated_at.is_empty() { &local.updated_at } else { &local.created_at };
+                            if local_time <= &ts.deleted_at {
+                                let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![&ts.entity_id]);
+                                let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![&ts.entity_id]);
+                                let _ = conn.execute("DELETE FROM folders WHERE id = ?1", params![&ts.entity_id]);
+                            }
+                        } else {
+                            let conn = self.conn.lock().unwrap();
+                            let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![&ts.entity_id]);
+                            let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![&ts.entity_id]);
+                        }
                     }
                     "credential" => {
                         let conn = self.conn.lock().unwrap();
@@ -1043,11 +1079,18 @@ impl Database {
 
         for folder in &bundle.folders {
             if !replace_all {
+                let incoming_time = if !folder.updated_at.is_empty() { &folder.updated_at } else { &folder.created_at };
                 if let Ok(Some(del_at)) = self.is_tombstoned("folder", &folder.id) {
-                    if folder.created_at <= del_at {
+                    if incoming_time <= &del_at {
                         continue;
                     } else {
                         let _ = self.remove_tombstone("folder", &folder.id);
+                    }
+                }
+                if let Ok(Some(local)) = self.get_folder(&folder.id) {
+                    let local_time = if !local.updated_at.is_empty() { &local.updated_at } else { &local.created_at };
+                    if local_time > incoming_time {
+                        continue;
                     }
                 }
             }
@@ -1055,12 +1098,18 @@ impl Database {
         }
         for cred in &bundle.credentials {
             if !replace_all {
+                let cred_time = if !cred.updated_at.is_empty() { &cred.updated_at } else { &cred.created_at };
                 if let Ok(Some(del_at)) = self.is_tombstoned("credential", &cred.id) {
-                    let cred_time = if !cred.updated_at.is_empty() { &cred.updated_at } else { &cred.created_at };
                     if cred_time <= &del_at {
                         continue;
                     } else {
                         let _ = self.remove_tombstone("credential", &cred.id);
+                    }
+                }
+                if let Ok(Some(local)) = self.get_credential(&cred.id) {
+                    let local_time = if !local.updated_at.is_empty() { &local.updated_at } else { &local.created_at };
+                    if local_time > cred_time {
+                        continue;
                     }
                 }
             }
@@ -1073,6 +1122,11 @@ impl Database {
                         continue;
                     } else {
                         let _ = self.remove_tombstone("host", &host.id);
+                    }
+                }
+                if let Ok(Some(local)) = self.get_host(&host.id) {
+                    if local.updated_at > host.updated_at {
+                        continue;
                     }
                 }
             }
@@ -1099,6 +1153,11 @@ impl Database {
                         let _ = self.remove_tombstone("snippet", &snippet.id);
                     }
                 }
+                if let Ok(Some(local)) = self.get_snippet(&snippet.id) {
+                    if local.updated_at > snippet.updated_at {
+                        continue;
+                    }
+                }
             }
             self.save_snippet(snippet)?;
         }
@@ -1113,9 +1172,31 @@ impl Database {
                         let _ = self.remove_tombstone("workspace_preset", &preset.id);
                     }
                 }
+                if let Ok(Some(local)) = self.get_workspace_preset(&preset.id) {
+                    if local.updated_at > preset.updated_at {
+                        continue;
+                    }
+                }
             }
             self.save_workspace_preset(preset)?;
             workspace_presets_imported += 1;
+        }
+
+        // Post-import cleanup: ensure referential consistency if any parent entity was deleted
+        {
+            let conn = self.conn.lock().unwrap();
+            let _ = conn.execute(
+                "UPDATE hosts SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id NOT IN (SELECT id FROM folders)",
+                [],
+            );
+            let _ = conn.execute(
+                "UPDATE hosts SET jump_host_id = NULL WHERE jump_host_id IS NOT NULL AND jump_host_id NOT IN (SELECT id FROM hosts)",
+                [],
+            );
+            let _ = conn.execute(
+                "UPDATE folders SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM folders)",
+                [],
+            );
         }
 
         // TOFU / MITM protection: during a merge, never overwrite an existing

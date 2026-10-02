@@ -422,11 +422,20 @@ pub fn folder_save(
     parent_id: Option<String>,
     id: Option<String>,
 ) -> Result<Folder, String> {
+    let now = Utc::now().to_rfc3339();
+    let (id, created_at) = if let Some(fid) = id {
+        let existing = state.db.get_folder(&fid).map_err(|e| e.to_string())?;
+        let cat = existing.map(|f| f.created_at).unwrap_or_else(|| now.clone());
+        (fid, cat)
+    } else {
+        (Uuid::new_v4().to_string(), now.clone())
+    };
     let folder = Folder {
-        id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+        id,
         name,
         parent_id,
-        created_at: Utc::now().to_rfc3339(),
+        created_at,
+        updated_at: now,
     };
     state.db.save_folder(&folder).map_err(|e| e.to_string())?;
     Ok(folder)

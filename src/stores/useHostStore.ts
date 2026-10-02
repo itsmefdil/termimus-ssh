@@ -77,21 +77,25 @@ export const useHostStore = create<HostState>((set, get) => ({
   saveHost: async (input: HostInput, hostId?: string) => {
     await api.saveHost(input, hostId);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   deleteHost: async (id: string) => {
     await api.deleteHost(id);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   saveFolder: async (name: string, parentId?: string, id?: string) => {
     await api.saveFolder(name, parentId, id);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   deleteFolder: async (id: string) => {
     await api.deleteFolder(id);
     await get().refresh();
+    import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
   },
 
   setSelectedTag: (tag) => set({ selectedTag: tag }),

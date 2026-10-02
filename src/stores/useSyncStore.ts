@@ -38,7 +38,10 @@ interface SyncState {
   push: () => Promise<number>;
   pull: () => Promise<ImportSummary>;
   getDevices: () => Promise<ConnectedDevice[]>;
+  triggerAutoPush: (delayMs?: number) => void;
 }
+
+let autoPushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getDefaultDeviceName() {
   const platform = navigator.userAgent.includes("Linux")
@@ -273,6 +276,27 @@ export const useSyncStore = create<SyncState>()(
         } catch {
           return [];
         }
+      },
+
+      triggerAutoPush: (delayMs = 2000) => {
+        const { autoSync, serverUrl, syncPassword } = get();
+        if (!autoSync || !serverUrl || !syncPassword.trim()) {
+          return;
+        }
+        if (autoPushTimer) {
+          clearTimeout(autoPushTimer);
+        }
+        autoPushTimer = setTimeout(async () => {
+          autoPushTimer = null;
+          try {
+            if (get().syncStatus === "syncing") {
+              return;
+            }
+            await get().push();
+          } catch (e) {
+            console.warn("[AutoSync] Push failed:", e);
+          }
+        }, delayMs);
       },
     }),
     {

@@ -222,6 +222,13 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     return folders.find((f) => f.id === selectedFolderId) || null;
   }, [folders, selectedFolderId]);
 
+  // Auto-reset selectedFolderId if the active folder is deleted remotely or locally
+  useEffect(() => {
+    if (selectedFolderId && !folders.some((f) => f.id === selectedFolderId)) {
+      setSelectedFolderId(null);
+    }
+  }, [folders, selectedFolderId]);
+
   // Hosts inside the currently selected group
   const hostsInActiveFolder = useMemo(() => {
     if (!selectedFolderId) return [];

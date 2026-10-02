@@ -6,6 +6,8 @@ pub struct Folder {
     pub name: String,
     pub parent_id: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
