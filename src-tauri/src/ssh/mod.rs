@@ -5,11 +5,34 @@ use russh::Disconnect;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 use crate::db::models::KnownHost;
 use crate::db::Database;
+
+/// Configures a `TcpStream` with low-latency (`TCP_NODELAY`) and socket-level
+/// TCP keepalive (15s idle probe, 5s retry interval) to prevent stateful NAT routers,
+/// middleboxes, and cloud VPC firewalls from terminating idle connections.
+pub fn configure_tcp_stream(stream: &tokio::net::TcpStream) {
+    let _ = stream.set_nodelay(true);
+    let keepalive = socket2::TcpKeepalive::new()
+        .with_time(Duration::from_secs(15))
+        .with_interval(Duration::from_secs(5));
+    let _ = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive);
+}
+
+/// Creates a standard `russh::client::Config` with SSH-level keepalive enabled.
+/// Sends `keepalive@openssh.com` probes every 15 seconds to ensure sessions
+/// (interactive shells, long-running monitoring like btop/htop, SFTP, tunnels)
+/// never get dropped by remote servers or NAT translation timeouts.
+pub fn default_client_config() -> Arc<client::Config> {
+    let mut config = client::Config::default();
+    config.keepalive_interval = Some(Duration::from_secs(15));
+    config.keepalive_max = 4;
+    Arc::new(config)
+}
 
 /// Progress payload emitted to the frontend during connection handshake.
 #[derive(Debug, Clone, Serialize)]
@@ -292,7 +315,7 @@ impl SessionManager {
 
             let jump_tcp = match tokio::net::TcpStream::connect((jump.address.as_str(), jump.port)).await {
                 Ok(s) => {
-                    let _ = s.set_nodelay(true);
+                    configure_tcp_stream(&s);
                     s
                 }
                 Err(e) => {
@@ -302,7 +325,7 @@ impl SessionManager {
                 }
             };
 
-            let jump_config = Arc::new(client::Config::default());
+            let jump_config = default_client_config();
             let jump_handler = SshClientHandler {
                 address: jump.address.clone(),
                 port: jump.port,
@@ -376,7 +399,7 @@ impl SessionManager {
 
             let s = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
                 Ok(s) => {
-                    let _ = s.set_nodelay(true);
+                    configure_tcp_stream(&s);
                     s
                 }
                 Err(e) => {
@@ -389,7 +412,7 @@ impl SessionManager {
         };
 
         // ── 2. Target SSH Handshake over the stream ──
-        let config = Arc::new(client::Config::default());
+        let config = default_client_config();
         let handler = SshClientHandler {
             address: address.clone(),
             port,
@@ -744,9 +767,7 @@ pub async fn detect_os_via_exec(
     host_id: String,
 ) {
     let result: Result<Option<String>, String> = async {
-        let config = Arc::new(russh::client::Config {
-            ..Default::default()
-        });
+        let config = default_client_config();
         let handler = SshClientHandler {
             address: address.clone(),
             port,

@@ -53,7 +53,7 @@ impl SftpManager {
         username: String,
         auth: SshAuth,
     ) -> Result<String, String> {
-        let config = Arc::new(client::Config::default());
+        let config = crate::ssh::default_client_config();
         let handler = SshClientHandler {
             address: address.clone(),
             port,
@@ -61,7 +61,7 @@ impl SftpManager {
         };
         let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
             Ok(s) => {
-                let _ = s.set_nodelay(true);
+                crate::ssh::configure_tcp_stream(&s);
                 s
             }
             Err(e) => return Err(format!("SFTP TCP connection failed: {e}")),
